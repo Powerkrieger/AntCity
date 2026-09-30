@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ground shadow -->
+    <path
+        android:fillColor="#E3E1DA"
+        android:pathData="M20.00,89.00 A31.00,4.40 0 1,0 82.00,89.00 A31.00,4.40 0 1,0 20.00,89.00 Z" />
+    <path
+        android:fillColor="#D9D6CC"
+        android:pathData="M47.00,86.00 A18.00,3.20 0 1,0 83.00,86.00 A18.00,3.20 0 1,0 47.00,86.00 Z" />
+
+    <!-- ball, behind the bottle -->
+    <path
+        android:fillColor="#D98A3D"
+        android:pathData="M43.50,57.00 A20.50,20.50 0 1,0 84.50,57.00 A20.50,20.50 0 1,0 43.50,57.00 Z" />
+    <path
+        android:fillColor="#F2A65A"
+        android:pathData="M39.00,53.80 A20.50,20.50 0 1,0 80.00,53.80 A20.50,20.50 0 1,0 39.00,53.80 Z" />
+
+    <!-- bottle, tipped up to the right, front-left to front-right -->
+    <path
+        android:fillColor="#22000000"
+        android:pathData="M55.10,69.37 L55.56,71.97 C60.76,71.05 65.65,68.40 68.30,64.18 L87.54,60.79 L87.34,59.66 L68.10,63.05 C65.27,66.23 60.30,68.45 55.10,69.37 Z" />
+    <path
+        android:fillColor="#2FAE7A"
+        android:strokeColor="#1B6B49"
+        android:strokeWidth="0.62"
+        android:pathData="M21.91,63.60 L24.36,77.47 L55.56,71.97 C60.76,71.05 65.65,68.40 68.30,64.18 L87.54,60.79 L86.99,57.67 L67.75,61.06 C63.82,58.00 58.31,57.18 53.11,58.10 Z" />
+    <path
+        android:fillColor="#BBFFFFFF"
+        android:pathData="M49.95,60.44 L25.25,64.80 L25.53,66.36 L48.49,62.31 Z" />
+    <path
+        android:fillColor="#0E3D28"
+        android:strokeColor="#1B6B49"
+        android:strokeWidth="0.4"
+        android:pathData="M84.28,59.23 A2.99,1.23 0 1,0 90.26,59.23 A2.99,1.23 0 1,0 84.28,59.23 Z" />
+</vector>

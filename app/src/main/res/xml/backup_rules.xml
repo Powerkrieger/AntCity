@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The save file (login token + last server snapshot) may be backed up; the server reconciles stale state on sync. -->
+<full-backup-content />
