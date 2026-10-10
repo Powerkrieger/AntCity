@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Town Hall silhouette, columns cut out -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M33.84,54 L54,39.72 L74.16,54 L70.8,54 L70.8,71.64 L37.2,71.64 L37.2,54 Z M41.4,56.5 h3.36 v13.5 h-3.36 Z M48.96,56.5 h3.36 v13.5 h-3.36 Z M56.52,56.5 h3.36 v13.5 h-3.36 Z M64.08,56.5 h3.36 v13.5 h-3.36 Z" />
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.05"
+        android:pathData="M54,40 L54,32.16" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M54,32.16 L62.4,34.26 L54,36.36 Z" />
+</vector>

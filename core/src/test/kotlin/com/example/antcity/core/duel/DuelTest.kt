@@ -87,18 +87,28 @@ class DuelTest {
         assertIs<DuelResult.Rejected>(Duel.shoot(s, 1, o))
 
         // Materials for a scout and enough shots to bring the hall down.
-        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 7) else p })
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 8) else p })
         s = Duel.buy(s, 0, Extra.SCOUT).ok()
-        repeat(6) { s = Duel.buy(s, 0, Extra.SHOT).ok() }
+        repeat(7) { s = Duel.buy(s, 0, Extra.SHOT).ok() }
 
         while (s.battle!!.budgets[0].scouts > 0) s = Duel.scout(s, 0, o).ok()
         val intel = s.players[0].intel
         assertEquals(DuelBuilding.TOWN_HALL, intel[o]?.type)
         assertTrue(o.neighbors().all { intel[it]?.occupied == (it in o.neighbors().subList(1, 5)) })
 
+        val hp = DuelRules().maxHp(s.players[1].board, s.players[1].board[o]!!)
         while (s.players[1].board.hasTownHall) s = Duel.shoot(s, 0, o).ok()
-        assertEquals(Shot.DESTROYED, s.players[0].intel[o]?.shot)
+        // Shots are hidden: the shooter still only sees the scouted hall, marked as fired at.
+        assertEquals(Intel(true, DuelBuilding.TOWN_HALL, Shot.FIRED, 0), s.players[0].intel[o])
         assertEquals(1, s.players[0].kills)
+        assertEquals(hp, s.players[0].hits)
+        assertEquals(setOf(o), s.players[1].board.ruins)
+
+        // A miss doesn't show either.
+        val empty = o.neighbors()[0]
+        s = Duel.shoot(s, 0, empty).ok()
+        assertEquals(Shot.FIRED, s.players[0].intel[empty]?.shot)
+        assertEquals(hp, s.players[0].hits)
 
         s = Duel.endTurn(s, 0).ok()
         assertEquals(1, s.battle!!.attacker)
@@ -110,7 +120,7 @@ class DuelTest {
     @Test
     fun blindShotsOnlyShowResultsOnScoutedTiles() {
         var s = toFirstBattle()
-        s = s.copy(config = s.config.copy(rules = DuelRules(blindShots = true)))
+        s = s.copy(config = s.config.copy(rules = DuelRules(hiddenShots = false, blindShots = true)))
         s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 3) else p })
         s = Duel.buy(Duel.buy(Duel.buy(s, 0, Extra.SHOT).ok(), 0, Extra.SHOT).ok(), 0, Extra.SCOUT).ok()
         val ring = o.neighbors()
@@ -131,7 +141,7 @@ class DuelTest {
     @Test
     fun salvoRevealsResultsOnlyWhenTheTurnEnds() {
         var s = toFirstBattle()
-        s = s.copy(config = s.config.copy(rules = DuelRules(salvo = true)))
+        s = s.copy(config = s.config.copy(rules = DuelRules(hiddenShots = false, salvo = true)))
         s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 2) else p })
         s = Duel.buy(Duel.buy(s, 0, Extra.SHOT).ok(), 0, Extra.SHOT).ok()
         val empty = o.neighbors()[0]
@@ -150,7 +160,7 @@ class DuelTest {
     @Test
     fun salvoWithBlindShotsRevealsOnlyScoutedTiles() {
         var s = toFirstBattle()
-        s = s.copy(config = s.config.copy(rules = DuelRules(salvo = true, blindShots = true)))
+        s = s.copy(config = s.config.copy(rules = DuelRules(hiddenShots = false, salvo = true, blindShots = true)))
         s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 2) else p })
         s = Duel.buy(Duel.buy(s, 0, Extra.SCOUT).ok(), 0, Extra.SHOT).ok()
         val far = Hex(2, -2)

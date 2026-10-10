@@ -39,7 +39,12 @@ data class Yield(val shots: Int = 0, val scouts: Int = 0, val materials: Int = 0
 
 data class Building(val type: DuelBuilding, val hex: Hex, val damage: Int = 0)
 
-data class Board(val radius: Int, val buildings: List<Building> = emptyList()) {
+data class Board(
+    val radius: Int,
+    val buildings: List<Building> = emptyList(),
+    /** Where the opponent destroyed buildings; still free to build on. */
+    val ruins: Set<Hex> = emptySet(),
+) {
     operator fun get(hex: Hex) = buildings.firstOrNull { it.hex == hex }
     fun inBounds(hex: Hex) = hex.length <= radius
     fun isFree(hex: Hex) = inBounds(hex) && get(hex) == null
@@ -47,7 +52,7 @@ data class Board(val radius: Int, val buildings: List<Building> = emptyList()) {
     val hasTownHall get() = buildings.any { it.type == DuelBuilding.TOWN_HALL }
 
     operator fun plus(b: Building) = copy(buildings = buildings + b)
-    fun without(hex: Hex) = copy(buildings = buildings.filter { it.hex != hex })
+    fun without(hex: Hex) = copy(buildings = buildings.filter { it.hex != hex }, ruins = ruins + hex)
     fun replace(b: Building) = copy(buildings = buildings.map { if (it.hex == b.hex) b else it })
 }
 
@@ -71,6 +76,11 @@ data class DuelRules(
     val maxWallBonus: Int = 2,
     /** Materials for one extra shot or scout. */
     val extraActionCost: Int = 2,
+    /**
+     * Shots never show their result: the shooter only knows they fired there, and learns the
+     * damage they did from the battle report. Overrides [blindShots] and [salvo].
+     */
+    val hiddenShots: Boolean = true,
     /**
      * Shots only show their result on tiles scouted this battle; elsewhere the shooter just knows
      * they fired there. Stops carpet-firing from doubling as scouting.
@@ -132,7 +142,7 @@ data class DuelConfig(
 
 enum class Shot {
     MISS, HIT, DESTROYED,
-    /** Fired at an unscouted tile with [DuelRules.blindShots]: the result isn't known. */
+    /** Fired at, but the result isn't known (hidden or blind shots, or a salvo not yet over). */
     FIRED,
 }
 
@@ -149,6 +159,8 @@ data class Player(
     val intel: Map<Hex, Intel> = emptyMap(),
     /** Enemy buildings this player has destroyed. */
     val kills: Int = 0,
+    /** Damage this player has done: shots that hit a building. */
+    val hits: Int = 0,
     /** Has picked in the current build round. */
     val picked: Boolean = false,
     /** Enemy tiles this player scouted in the current battle. */
@@ -288,8 +300,8 @@ object Duel {
             else -> Triple(enemy.replace(b.copy(damage = b.damage + 1)), Intel(true, b.type, Shot.HIT, s.phase), 0)
         }
         val rules = s.config.rules
-        // What the shooter learns, ever: nothing on unscouted tiles with blind shots.
-        val revealed = if (!rules.blindShots || hex in me.scouted) seen else null
+        // What the shooter learns, ever: nothing with hidden shots, nothing on unscouted tiles with blind shots.
+        val revealed = if (!rules.hiddenShots && (!rules.blindShots || hex in me.scouted)) seen else null
         // A "fired here" marker keeps whatever was known about the tile.
         val fired = (me.intel[hex]?.takeIf { it.phase == s.phase } ?: Intel(false, phase = s.phase)).copy(shot = Shot.FIRED)
         val after = when {
@@ -298,7 +310,7 @@ object Duel {
         }
         return DuelResult.Ok(
             s.withPlayer(target, s.players[target].copy(board = board))
-                .withPlayer(player, after.copy(kills = me.kills + kills))
+                .withPlayer(player, after.copy(kills = me.kills + kills, hits = me.hits + if (b != null) 1 else 0))
                 .withBudget(player, budget.copy(shots = budget.shots - 1)),
         )
     }

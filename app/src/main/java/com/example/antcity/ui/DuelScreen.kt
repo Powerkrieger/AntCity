@@ -328,10 +328,8 @@ private fun ownCells(board: Board): Map<Hex, Cell> = board.buildings.associate {
 
 /** A player's own town, with rubble where the opponent destroyed something. */
 private fun townCells(s: DuelState, player: Int): Map<Hex, Cell> {
-    val rubble = s.players[Duel.opponent(player)].intel
-        .filter { (h, i) -> i.shot == Shot.DESTROYED && s.players[player].board[h] == null }
-        .mapValues { Cell(overlay = TileSprites.HIT) }
-    return rubble + ownCells(s.players[player].board)
+    val board = s.players[player].board
+    return board.ruins.associateWith { Cell(overlay = TileSprites.HIT) } + ownCells(board)
 }
 
 private fun intelCell(i: Intel?, phase: Int): Cell {
@@ -541,13 +539,16 @@ private fun ReportDialog(r: DuelViewModel.Report, names: List<String>, onDismiss
         title = { Text("Battle over") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                r.lost.forEachIndexed { i, n ->
+                // What each player did to the other's town.
+                r.damage.indices.forEach { i ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(14.dp).background(PLAYER_COLORS[i], CircleShape))
                         Spacer(Modifier.width(8.dp))
                         Text(names[i], Modifier.weight(1f))
-                        SpriteIcon(TileSprites.HIT, "🔥", 22.dp)
-                        Text(" $n", fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("${r.damage[i]} damage dealt", fontWeight = FontWeight.Bold)
+                            Text("${r.destroyed[i]} buildings destroyed", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

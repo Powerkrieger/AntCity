@@ -29,16 +29,19 @@ val VARIANTS: Map<String, DuelConfig> = linkedMapOf(
     "radius-3-fewer-shots" to DuelConfig(radius = 3, rules = DuelRules(hallShots = 0, hallMaterials = 2, artilleryShots = 0)),
     "radius-3-tower-2" to DuelConfig(radius = 3, rules = DuelRules(towerScouts = 2)),
     "radius-3-fewer-shots-tower-2" to DuelConfig(radius = 3, rules = DuelRules(hallShots = 0, hallMaterials = 2, artilleryShots = 0, towerScouts = 2)),
+    // Shots show their results right away, as before hidden shots.
+    "shown-shots" to DuelConfig(rules = DuelRules(hiddenShots = false)),
+    "radius-3-shown-shots" to DuelConfig(radius = 3, rules = DuelRules(hiddenShots = false)),
     // Shots only show results on scouted tiles, so scouting is how you aim.
-    "blind-shots" to DuelConfig(rules = DuelRules(blindShots = true)),
-    "blind-shots-tower-2" to DuelConfig(rules = DuelRules(blindShots = true, towerScouts = 2)),
-    "radius-3-blind-shots" to DuelConfig(radius = 3, rules = DuelRules(blindShots = true)),
-    "radius-3-blind-shots-tower-2" to DuelConfig(radius = 3, rules = DuelRules(blindShots = true, towerScouts = 2)),
+    "blind-shots" to DuelConfig(rules = DuelRules(hiddenShots = false, blindShots = true)),
+    "blind-shots-tower-2" to DuelConfig(rules = DuelRules(hiddenShots = false, blindShots = true, towerScouts = 2)),
+    "radius-3-blind-shots" to DuelConfig(radius = 3, rules = DuelRules(hiddenShots = false, blindShots = true)),
+    "radius-3-blind-shots-tower-2" to DuelConfig(radius = 3, rules = DuelRules(hiddenShots = false, blindShots = true, towerScouts = 2)),
     // Results only after the whole volley, so shooting can't be adjusted mid-turn.
-    "salvo" to DuelConfig(rules = DuelRules(salvo = true)),
-    "salvo-blind" to DuelConfig(rules = DuelRules(salvo = true, blindShots = true)),
-    "radius-3-salvo" to DuelConfig(radius = 3, rules = DuelRules(salvo = true)),
-    "radius-3-salvo-blind" to DuelConfig(radius = 3, rules = DuelRules(salvo = true, blindShots = true)),
+    "salvo" to DuelConfig(rules = DuelRules(hiddenShots = false, salvo = true)),
+    "salvo-blind" to DuelConfig(rules = DuelRules(hiddenShots = false, salvo = true, blindShots = true)),
+    "radius-3-salvo" to DuelConfig(radius = 3, rules = DuelRules(hiddenShots = false, salvo = true)),
+    "radius-3-salvo-blind" to DuelConfig(radius = 3, rules = DuelRules(hiddenShots = false, salvo = true, blindShots = true)),
 )
 
 private fun usage(): Nothing {

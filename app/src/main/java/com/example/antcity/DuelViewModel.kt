@@ -16,6 +16,7 @@ import com.example.antcity.core.duel.DuelState
 import com.example.antcity.core.duel.Extra
 import com.example.antcity.core.duel.NetDuel
 import com.example.antcity.core.duel.NetMessage
+import com.example.antcity.core.duel.Player
 import com.example.antcity.core.duel.Stage
 import com.example.antcity.core.duel.actor
 import com.example.antcity.core.duel.play
@@ -46,8 +47,8 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         data class Connecting(val name: String) : Lobby()
     }
 
-    /** Buildings each player lost in the battle that just ended. */
-    data class Report(val lost: List<Int>)
+    /** What each player did to the other's town in the battle that just ended. */
+    data class Report(val damage: List<Int>, val destroyed: List<Int>)
 
     var state by mutableStateOf<DuelState?>(null)
         private set
@@ -208,16 +209,16 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var tracked = Stage.BUILD
-    private var killsAtBattleStart = List(Duel.PLAYERS) { 0 }
+    private var atBattleStart = emptyList<Player>()
 
     /** Notices battles starting and ending, for the [report]. */
     private fun track(s: DuelState) {
-        if (s.stage == Stage.BATTLE && tracked != Stage.BATTLE) killsAtBattleStart = s.players.map { it.kills }
+        if (s.stage == Stage.BATTLE && tracked != Stage.BATTLE) atBattleStart = s.players
         if (s.stage != Stage.BATTLE && tracked == Stage.BATTLE) {
-            report = Report(s.players.indices.map { i ->
-                val enemy = Duel.opponent(i)
-                s.players[enemy].kills - killsAtBattleStart[enemy]
-            })
+            report = Report(
+                damage = s.players.indices.map { s.players[it].hits - atBattleStart[it].hits },
+                destroyed = s.players.indices.map { s.players[it].kills - atBattleStart[it].kills },
+            )
         }
         tracked = s.stage
     }

@@ -5,37 +5,39 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- ground shadow -->
+    <!-- grass tile -->
     <path
-        android:fillColor="#E3E1DA"
-        android:pathData="M20.00,89.00 A31.00,4.40 0 1,0 82.00,89.00 A31.00,4.40 0 1,0 20.00,89.00 Z" />
-    <path
-        android:fillColor="#D9D6CC"
-        android:pathData="M47.00,86.00 A18.00,3.20 0 1,0 83.00,86.00 A18.00,3.20 0 1,0 47.00,86.00 Z" />
+        android:fillColor="#9CCC65"
+        android:pathData="M54,21 L82.58,37.5 L82.58,70.5 L54,87 L25.42,70.5 L25.42,37.5 Z" />
 
-    <!-- ball, behind the bottle -->
+    <!-- the Town Hall, as in the game's sprite -->
     <path
-        android:fillColor="#D98A3D"
-        android:pathData="M43.50,57.00 A20.50,20.50 0 1,0 84.50,57.00 A20.50,20.50 0 1,0 43.50,57.00 Z" />
+        android:fillColor="#3C000000"
+        android:pathData="M34.68,72.48 A19.32,4.2 0 1,0 73.32,72.48 A19.32,4.2 0 1,0 34.68,72.48 Z" />
     <path
-        android:fillColor="#F2A65A"
-        android:pathData="M39.00,53.80 A20.50,20.50 0 1,0 80.00,53.80 A20.50,20.50 0 1,0 39.00,53.80 Z" />
-
-    <!-- bottle, tipped up to the right, front-left to front-right -->
+        android:fillColor="#ECE4D2"
+        android:strokeColor="#3C2D23"
+        android:strokeWidth="1.05"
+        android:pathData="M37.2,53.16 L70.8,53.16 L70.8,71.64 L37.2,71.64 Z" />
     <path
-        android:fillColor="#22000000"
-        android:pathData="M55.10,69.37 L55.56,71.97 C60.76,71.05 65.65,68.40 68.30,64.18 L87.54,60.79 L87.34,59.66 L68.10,63.05 C65.27,66.23 60.30,68.45 55.10,69.37 Z" />
+        android:fillColor="#FAF5EB"
+        android:strokeColor="#3C2D23"
+        android:strokeWidth="0.84"
+        android:pathData="M41.4,55.68 h3.36 v15.12 h-3.36 Z M48.96,55.68 h3.36 v15.12 h-3.36 Z M56.52,55.68 h3.36 v15.12 h-3.36 Z M64.08,55.68 h3.36 v15.12 h-3.36 Z" />
     <path
-        android:fillColor="#2FAE7A"
-        android:strokeColor="#1B6B49"
-        android:strokeWidth="0.62"
-        android:pathData="M21.91,63.60 L24.36,77.47 L55.56,71.97 C60.76,71.05 65.65,68.40 68.30,64.18 L87.54,60.79 L86.99,57.67 L67.75,61.06 C63.82,58.00 58.31,57.18 53.11,58.10 Z" />
+        android:fillColor="#78909C"
+        android:strokeColor="#3C2D23"
+        android:strokeWidth="1.05"
+        android:strokeLineJoin="round"
+        android:pathData="M33.84,54 L54,39.72 L74.16,54 Z" />
     <path
-        android:fillColor="#BBFFFFFF"
-        android:pathData="M49.95,60.44 L25.25,64.80 L25.53,66.36 L48.49,62.31 Z" />
+        android:strokeColor="#3C2D23"
+        android:strokeWidth="1.05"
+        android:pathData="M54,39.72 L54,32.16" />
     <path
-        android:fillColor="#0E3D28"
-        android:strokeColor="#1B6B49"
-        android:strokeWidth="0.4"
-        android:pathData="M84.28,59.23 A2.99,1.23 0 1,0 90.26,59.23 A2.99,1.23 0 1,0 84.28,59.23 Z" />
+        android:fillColor="#E53935"
+        android:strokeColor="#3C2D23"
+        android:strokeWidth="0.84"
+        android:strokeLineJoin="round"
+        android:pathData="M54,32.16 L62.4,34.26 L54,36.36 Z" />
 </vector>
