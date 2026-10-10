@@ -16,7 +16,26 @@ Art lives in `app/src/main/assets/sprites/` and is looked up by key; see [`art/R
 
 The app and server both run **the same `core` code**. That shared code makes the integrity checks possible.
 
-## Game
+## Duel (offline prototype)
+
+1v1 on two hidden hex grids, against the bot or two players on one phone (`core/.../duel/`).
+3 phases of 5 build rounds; each round both players pick one of the same 3 buildings and place it.
+The Town Hall can go anywhere, but must be placed in the first phase. After each phase comes a
+Battleship-style battle: scouts reveal a tile and whether its neighbours are built on, shots hit one
+tile, materials buy extra scouts or shots. Destroy the enemy Town Hall to win; otherwise most
+buildings destroyed wins. All numbers live in `DuelRules`.
+
+| Building     | Effect                                              |
+|--------------|-----------------------------------------------------|
+| 🏛️ Town Hall  | 4 HP, 1 shot, 1 material. Lose it and you lose       |
+| 🏠 House      | +1 to adjacent barracks and quarries                |
+| 🪖 Barracks   | 1 shot, 2 next to a house                           |
+| 🎯 Artillery  | 1 shot, +1 per adjacent barracks (max 2)            |
+| 🗼 Watchtower | 1 scout                                             |
+| ⛏️ Quarry     | 1 material, 2 next to a house                       |
+| 🧱 Wall       | 2 HP; adjacent buildings +1 HP (max 2)              |
+
+## Game (original city builder)
 
 | Building       | Role                                                               |
 |----------------|--------------------------------------------------------------------|

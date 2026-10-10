@@ -41,10 +41,13 @@ private enum class Tab(val label: String, val icon: String) {
 fun AntCityApp(vm: GameViewModel) {
     val city = vm.city
     var sandbox by rememberSaveable { mutableStateOf(false) }
-    if (sandbox) {
+    var duel by rememberSaveable { mutableStateOf(false) }
+    if (duel) {
+        DuelScreen(onClose = { duel = false })
+    } else if (sandbox) {
         SandboxScreen(onClose = { sandbox = false })
     } else if (vm.game == null || city == null) {
-        SetupScreen(vm) { sandbox = true }
+        SetupScreen(vm, openSandbox = { sandbox = true }, openDuel = { duel = true })
     } else {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         Scaffold(
@@ -67,7 +70,7 @@ fun AntCityApp(vm: GameViewModel) {
                     Tab.CITY -> CityScreen(vm, city)
                     Tab.ARMY -> ArmyScreen(vm, city)
                     Tab.RAID -> RaidScreen(vm, city)
-                    Tab.SETTINGS -> SettingsScreen(vm) { sandbox = true }
+                    Tab.SETTINGS -> SettingsScreen(vm, openSandbox = { sandbox = true }, openDuel = { duel = true })
                 }
             }
         }
@@ -116,7 +119,7 @@ private fun ResourceBar(s: GameState, vm: GameViewModel) {
 }
 
 @Composable
-private fun SetupScreen(vm: GameViewModel, openSandbox: () -> Unit) {
+private fun SetupScreen(vm: GameViewModel, openSandbox: () -> Unit, openDuel: () -> Unit) {
     var url by rememberSaveable { mutableStateOf("https://") }
     var name by rememberSaveable { mutableStateOf("") }
     Column(
@@ -134,12 +137,13 @@ private fun SetupScreen(vm: GameViewModel, openSandbox: () -> Unit) {
         ) {
             if (vm.busy) CircularProgressIndicator(Modifier.height(20.dp)) else Text("Found city")
         }
+        TextButton(onClick = openDuel, modifier = Modifier.fillMaxWidth()) { Text("⚔️ Duel (offline)") }
         TextButton(onClick = openSandbox, modifier = Modifier.fillMaxWidth()) { Text("🔷 Try the layout sandbox (offline)") }
     }
 }
 
 @Composable
-private fun SettingsScreen(vm: GameViewModel, openSandbox: () -> Unit) {
+private fun SettingsScreen(vm: GameViewModel, openSandbox: () -> Unit, openDuel: () -> Unit) {
     val g = vm.game ?: return
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -149,6 +153,7 @@ private fun SettingsScreen(vm: GameViewModel, openSandbox: () -> Unit) {
         Text("Actions waiting for upload: ${g.pending.size}")
         Button(onClick = { vm.syncNowAsync() }) { Text("Sync now") }
         Button(onClick = openSandbox) { Text("🔷 Layout sandbox") }
+        Button(onClick = openDuel) { Text("⚔️ Duel") }
         TextButton(onClick = { confirmLogout = true }) { Text("Log out on this device") }
     }
     if (confirmLogout) {

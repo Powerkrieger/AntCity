@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.example.antcity.core.duel.DuelBuilding
 import com.example.antcity.core.hex.HexBuilding
 import com.example.antcity.core.hex.Stat
 import kotlinx.serialization.Serializable
@@ -61,6 +62,7 @@ val LocalSprites = staticCompositionLocalOf<Sprites> { error("No Sprites provide
 // Keys follow `<category>.<enum name in lower case>`, matching sprites.json.
 val HexBuilding.spriteKey get() = "building.${name.lowercase()}"
 val Stat.spriteKey get() = "icon.${name.lowercase()}"
+val DuelBuilding.spriteKey get() = "building.${name.lowercase()}"
 
 object TileSprites {
     val GRASS = listOf("tile.grass_1", "tile.grass_2", "tile.grass_3")
