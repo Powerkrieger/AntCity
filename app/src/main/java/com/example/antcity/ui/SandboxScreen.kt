@@ -188,7 +188,7 @@ fun SandboxScreen(onClose: () -> Unit, vm: SandboxViewModel = viewModel()) {
 
     // Drag and drop. Positions are in root coordinates.
     var dragPos by remember { mutableStateOf<Offset?>(null) }
-    var dragEmoji by remember { mutableStateOf("") }
+    var dragType by remember { mutableStateOf<HexBuilding?>(null) }
     var hover by remember { mutableStateOf<Hex?>(null) }
     var boardRect by remember { mutableStateOf(Rect.Zero) }
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -298,7 +298,7 @@ fun SandboxScreen(onClose: () -> Unit, vm: SandboxViewModel = viewModel()) {
                                 OfferCard(
                                     o, vm.choice == c, Modifier.weight(1f), saved,
                                     onClick = { vm.select(c) },
-                                    onDragStart = { p -> dragEmoji = o.type.emoji; vm.beginDrag(c); dragCard(p) },
+                                    onDragStart = { p -> dragType = o.type; vm.beginDrag(c); dragCard(p) },
                                     onDrag = ::dragCard,
                                     onDragEnd = ::endCardDrag,
                                 )
@@ -311,13 +311,13 @@ fun SandboxScreen(onClose: () -> Unit, vm: SandboxViewModel = viewModel()) {
         }
 
       // The dragged building, while it isn't sitting on a valid tile.
-      dragPos?.takeIf { vm.ghost == null }?.let { p ->
+      val dragged = dragType
+      dragPos?.takeIf { vm.ghost == null && dragged != null }?.let { p ->
           val q = p - rootOrigin - Offset(0f, lift)
-          val half = with(LocalDensity.current) { 28.dp.toPx() }
-          Text(
-              dragEmoji,
-              fontSize = 44.sp,
-              modifier = Modifier.offset { IntOffset((q.x - half).roundToInt(), (q.y - half).roundToInt()) },
+          val half = with(LocalDensity.current) { 32.dp.toPx() }
+          SpriteIcon(
+              dragged!!.spriteKey, dragged.emoji, 64.dp,
+              Modifier.offset { IntOffset((q.x - half).roundToInt(), (q.y - half).roundToInt()) },
           )
       }
      }
@@ -367,7 +367,7 @@ private fun StatPill(stat: Stat, value: Int, before: Int) {
         Modifier.background(Color(0xCC1B1B1B), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(stat.emoji, fontSize = 16.sp)
+        SpriteIcon(stat.spriteKey, stat.emoji, 20.dp)
         Spacer(Modifier.width(6.dp))
         Text(
             "$value",
@@ -398,6 +398,7 @@ private fun HexBoard(
     onGhostDragEnd: () -> Unit,
 ) {
     val measurer = rememberTextMeasurer()
+    val sprites = LocalSprites.current
     val currentGhost by rememberUpdatedState(ghost)
     val tap by rememberUpdatedState(onTap)
     val ghostDrag by rememberUpdatedState(onGhostDrag)
@@ -429,18 +430,25 @@ private fun HexBoard(
     ) {
         val g = HexGeometry(size.width, size.height, radius)
         for (h in Hex.disk(radius)) {
-            drawPath(g.outline(h, 0.97f), GRASS[Math.floorMod(h.q * 7 + h.r * 13, GRASS.size)])
+            val variant = Math.floorMod(h.q * 7 + h.r * 13, GRASS.size)
+            val tile = sprites[TileSprites.GRASS[variant]]
+            if (tile != null) drawSprite(tile, g.center(h), 2 * g.size * 0.97f) else drawPath(g.outline(h, 0.97f), GRASS[variant])
             heat[h]?.takeIf { it.gain > 0 }?.let { drawPath(g.outline(h, 0.97f), Color.White.copy(alpha = 0.45f * it.gain / maxGain)) }
 
             if (h == invalid) drawPath(g.outline(h, 0.97f), DOWN.copy(alpha = 0.6f))
             val b = byHex[h] ?: continue
             val r = result.at(h)
             glow[h]?.let { up -> drawPath(g.outline(h, 0.97f), (if (up) UP else DOWN).copy(alpha = 0.55f)) }
-            drawPath(g.outline(h, 0.78f), FOUNDATION.copy(alpha = if (h == ghost) 0.75f else 1f))
+            val fade = if (h == ghost) 0.8f else 1f
+            val foundation = sprites[TileSprites.FOUNDATION]
+            if (foundation != null) drawSprite(foundation, g.center(h), 2 * g.size * 0.78f, fade)
+            else drawPath(g.outline(h, 0.78f), FOUNDATION.copy(alpha = fade))
             if (r?.mirrored == true) drawPath(g.outline(h, 0.78f), GOLD, style = Stroke(width = g.size * 0.06f))
             if (b.type.hasFacing) drawFacing(g, b)
             if (h == ghost || h == selected) drawPath(g.outline(h, 0.97f), Color.White, style = Stroke(width = g.size * 0.08f))
-            drawEmoji(measurer, b.type.emoji, g.center(h), g.size * 0.85f, if (h == ghost) 0.8f else 1f)
+            val sprite = sprites[b.type.spriteKey]
+            if (sprite != null) drawSprite(sprite, g.center(h), g.size * 1.45f, fade)
+            else drawEmoji(measurer, b.type.emoji, g.center(h), g.size * 0.85f, fade)
         }
     }
 }
@@ -494,7 +502,7 @@ private fun OfferCard(
         colors = CardDefaults.cardColors(containerColor = if (saved) Color(0xFFFFF3E0) else MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(offer.type.emoji, fontSize = 30.sp)
+            SpriteIcon(offer.type.spriteKey, offer.type.emoji, 44.dp)
             Text(offer.type.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
@@ -503,7 +511,13 @@ private fun OfferCard(
 @Composable
 private fun OutputLine(stats: Stats) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        stats.entries().forEach { (s, v) -> Text("${s.emoji} $v", fontWeight = FontWeight.Bold) }
+        stats.entries().forEach { (s, v) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SpriteIcon(s.spriteKey, s.emoji, 18.dp)
+                Spacer(Modifier.width(4.dp))
+                Text("$v", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -591,7 +605,7 @@ private fun CodexDialog(onDismiss: () -> Unit) {
                         Box(
                             Modifier.size(44.dp).background(FOUNDATION, CircleShape).border(2.dp, t.rarity?.color() ?: Color.Transparent, CircleShape),
                             contentAlignment = Alignment.Center,
-                        ) { Text(t.emoji, fontSize = 22.sp) }
+                        ) { SpriteIcon(t.spriteKey, t.emoji, 34.dp) }
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(t.label, fontWeight = FontWeight.Bold)

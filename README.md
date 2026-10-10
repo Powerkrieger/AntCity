@@ -12,6 +12,8 @@ which verifies that everything you have could legitimately have been built.
 | `server/` | Ktor + SQLite backend (Docker + Caddy, like GasTrack's)                       |
 | `app/`    | Jetpack Compose client                                                       |
 
+Art lives in `app/src/main/assets/sprites/` and is looked up by key; see [`art/README.md`](art/README.md).
+
 The app and server both run **the same `core` code**. That shared code makes the integrity checks possible.
 
 ## Game

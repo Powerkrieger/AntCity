@@ -1,0 +1,34 @@
+{
+  "size": 128,
+  "sprites": {
+    "tile.grass_1": "tiles/grass_1.png",
+    "tile.grass_2": "tiles/grass_2.png",
+    "tile.grass_3": "tiles/grass_3.png",
+    "tile.foundation": "tiles/foundation.png",
+    "tile.fog": "tiles/fog.png",
+    "tile.hit": "tiles/hit.png",
+    "tile.miss": "tiles/miss.png",
+    "tile.unknown": "tiles/unknown.png",
+    "tile.crack": "tiles/crack.png",
+
+    "building.town_hall": "buildings/town_hall.png",
+    "building.house": "buildings/house.png",
+    "building.farm": "buildings/farm.png",
+    "building.wall": "buildings/wall.png",
+    "building.tower": "buildings/tower.png",
+    "building.barracks": "buildings/barracks.png",
+    "building.market": "buildings/market.png",
+    "building.artillery": "buildings/artillery.png",
+    "building.gate": "buildings/gate.png",
+    "building.hangar": "buildings/hangar.png",
+    "building.temple": "buildings/temple.png",
+    "building.monument": "buildings/monument.png",
+    "building.quarry": "buildings/quarry.png",
+
+    "icon.attack": "icons/attack.png",
+    "icon.defense": "icons/defense.png",
+    "icon.recon": "icons/recon.png",
+    "icon.materials": "icons/materials.png",
+    "icon.food": "icons/food.png"
+  }
+}
