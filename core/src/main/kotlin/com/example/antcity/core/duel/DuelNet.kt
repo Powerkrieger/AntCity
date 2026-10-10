@@ -56,7 +56,7 @@ sealed class NetMessage {
 
     companion object {
         /** Bumped whenever the rules or messages change, so mismatched versions don't play. */
-        const val PROTOCOL = 1
+        const val PROTOCOL = 2
 
         private val json = Json { ignoreUnknownKeys = true }
         fun decode(line: String): NetMessage = json.decodeFromString(serializer(), line)
@@ -111,6 +111,8 @@ class NetDuel(val me: Int, seed: Long) {
                     append('|').append(p.materials).append(',').append(p.kills).append(',').append(p.picked)
                     p.board.buildings.sortedWith(compareBy({ it.hex.q }, { it.hex.r })).forEach { append(';').append(it) }
                     p.intel.entries.sortedWith(compareBy({ it.key.q }, { it.key.r })).forEach { append(';').append(it.key).append(it.value) }
+                    p.pending.entries.sortedWith(compareBy({ it.key.q }, { it.key.r })).forEach { append(';').append(it.key).append(it.value) }
+                    p.scouted.sortedWith(compareBy({ it.q }, { it.r })).forEach { append(';').append(it) }
                 }
             }
             // FNV-1a, 64 bit.

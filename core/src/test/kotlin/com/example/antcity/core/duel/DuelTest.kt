@@ -129,6 +129,41 @@ class DuelTest {
     }
 
     @Test
+    fun salvoRevealsResultsOnlyWhenTheTurnEnds() {
+        var s = toFirstBattle()
+        s = s.copy(config = s.config.copy(rules = DuelRules(salvo = true)))
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 2) else p })
+        s = Duel.buy(Duel.buy(s, 0, Extra.SHOT).ok(), 0, Extra.SHOT).ok()
+        val empty = o.neighbors()[0]
+
+        s = Duel.shoot(s, 0, o).ok()
+        s = Duel.shoot(s, 0, empty).ok()
+        assertEquals(Shot.FIRED, s.players[0].intel[o]?.shot)
+        assertEquals(Shot.FIRED, s.players[0].intel[empty]?.shot)
+
+        s = Duel.endTurn(s, 0).ok()
+        assertEquals(Shot.HIT, s.players[0].intel[o]?.shot)
+        assertEquals(Shot.MISS, s.players[0].intel[empty]?.shot)
+        assertTrue(s.players[0].pending.isEmpty())
+    }
+
+    @Test
+    fun salvoWithBlindShotsRevealsOnlyScoutedTiles() {
+        var s = toFirstBattle()
+        s = s.copy(config = s.config.copy(rules = DuelRules(salvo = true, blindShots = true)))
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 2) else p })
+        s = Duel.buy(Duel.buy(s, 0, Extra.SCOUT).ok(), 0, Extra.SHOT).ok()
+        val far = Hex(2, -2)
+
+        s = Duel.scout(s, 0, o).ok()
+        s = Duel.shoot(s, 0, o).ok()
+        s = Duel.shoot(s, 0, far).ok()
+        s = Duel.endTurn(s, 0).ok()
+        assertEquals(Shot.HIT, s.players[0].intel[o]?.shot)
+        assertEquals(Shot.FIRED, s.players[0].intel[far]?.shot)
+    }
+
+    @Test
     fun quietBattleMovesToTheNextPhaseWithTheOtherPlayerFirst() {
         var s = toFirstBattle()
         s = Duel.endTurn(s, 0).ok()

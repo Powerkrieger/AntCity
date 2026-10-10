@@ -338,7 +338,8 @@ private fun intelCell(i: Intel?, phase: Int): Cell {
     if (i == null) return Cell(fog = true)
     val stale = i.phase < phase
     return when {
-        i.shot == Shot.FIRED -> Cell(fog = true, overlay = TileSprites.FIRED, stale = stale)
+        // Fired at, result not known (yet): keep what scouting showed.
+        i.shot == Shot.FIRED -> Cell(fog = !i.occupied, building = i.type, overlay = TileSprites.FIRED, stale = stale)
         i.shot == Shot.MISS -> Cell(overlay = TileSprites.MISS, stale = stale)
         i.shot == Shot.DESTROYED -> Cell(overlay = TileSprites.HIT, stale = stale)
         i.shot == Shot.HIT -> Cell(building = i.type, overlay = TileSprites.CRACK, stale = stale)

@@ -164,6 +164,8 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
                 when {
                     f != null && f.shot != Shot.FIRED && !alive(f) -> Double.NEGATIVE_INFINITY // known empty, missed or destroyed
                     f != null && f.shot != Shot.FIRED -> g[Gene.SHOT_KNOWN] + (if (f.shot == Shot.HIT) g[Gene.SHOT_DAMAGED] else 0.0)
+                    // Fired at already (result unknown), but scouting showed a building there.
+                    f != null && f.occupied -> g[Gene.SHOT_KNOWN] + g[Gene.SHOT_REFIRE]
                     else -> g[Gene.SHOT_UNKNOWN] +
                         (if (f?.shot == Shot.FIRED) g[Gene.SHOT_REFIRE] else 0.0) +
                         g[Gene.SHOT_RING] * ring(s, h) +

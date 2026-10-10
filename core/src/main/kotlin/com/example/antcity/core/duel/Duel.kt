@@ -76,6 +76,12 @@ data class DuelRules(
      * they fired there. Stops carpet-firing from doubling as scouting.
      */
     val blindShots: Boolean = false,
+    /**
+     * Shot results are only revealed once the attacker ends their turn, so a turn is one planned
+     * volley instead of firing, looking and adjusting. With [blindShots], unscouted tiles still
+     * stay unknown afterwards.
+     */
+    val salvo: Boolean = false,
 ) {
     fun hp(type: DuelBuilding) = when (type) {
         DuelBuilding.TOWN_HALL -> hallHp
@@ -145,6 +151,10 @@ data class Player(
     val kills: Int = 0,
     /** Has picked in the current build round. */
     val picked: Boolean = false,
+    /** Enemy tiles this player scouted in the current battle. */
+    val scouted: Set<Hex> = emptySet(),
+    /** With [DuelRules.salvo]: results of this turn's shots, revealed when the turn ends. */
+    val pending: Map<Hex, Intel> = emptyMap(),
 )
 
 enum class Stage { BUILD, BATTLE, OVER }
@@ -229,7 +239,7 @@ object Duel {
         val order = if (s.phase % 2 == 0) listOf(0, 1) else listOf(1, 0)
         return s.copy(
             stage = Stage.BATTLE,
-            players = s.players.mapIndexed { i, p -> p.copy(materials = p.materials + yields[i].materials) },
+            players = s.players.mapIndexed { i, p -> p.copy(materials = p.materials + yields[i].materials, scouted = emptySet(), pending = emptyMap()) },
             battle = Battle(order, 0, yields.map { Budget(it.shots, it.scouts) }),
         )
     }
@@ -254,7 +264,7 @@ object Duel {
             Intel(occupied = b != null, type = if (h == hex) b?.type else null, phase = s.phase)
         }
         return DuelResult.Ok(
-            s.withPlayer(player, me.copy(intel = me.intel + seen))
+            s.withPlayer(player, me.copy(intel = me.intel + seen, scouted = me.scouted + seen.keys))
                 .withBudget(player, budget.copy(scouts = budget.scouts - 1)),
         )
     }
@@ -277,12 +287,18 @@ object Duel {
             }
             else -> Triple(enemy.replace(b.copy(damage = b.damage + 1)), Intel(true, b.type, Shot.HIT, s.phase), 0)
         }
-        // Scouted this battle (and not just blindly fired at): the result is visible.
-        val scouted = me.intel[hex]?.let { it.phase == s.phase && it.shot != Shot.FIRED } == true
-        val intel = if (!s.config.rules.blindShots || scouted) seen else Intel(false, shot = Shot.FIRED, phase = s.phase)
+        val rules = s.config.rules
+        // What the shooter learns, ever: nothing on unscouted tiles with blind shots.
+        val revealed = if (!rules.blindShots || hex in me.scouted) seen else null
+        // A "fired here" marker keeps whatever was known about the tile.
+        val fired = (me.intel[hex]?.takeIf { it.phase == s.phase } ?: Intel(false, phase = s.phase)).copy(shot = Shot.FIRED)
+        val after = when {
+            rules.salvo -> me.copy(intel = me.intel + (hex to fired), pending = revealed?.let { me.pending + (hex to it) } ?: me.pending)
+            else -> me.copy(intel = me.intel + (hex to (revealed ?: fired)))
+        }
         return DuelResult.Ok(
             s.withPlayer(target, s.players[target].copy(board = board))
-                .withPlayer(player, me.copy(intel = me.intel + (hex to intel), kills = me.kills + kills))
+                .withPlayer(player, after.copy(kills = me.kills + kills))
                 .withBudget(player, budget.copy(shots = budget.shots - 1)),
         )
     }
@@ -324,6 +340,9 @@ object Duel {
     /** Ends [player]'s battle turn; unused shots and scouts are lost, materials are kept. */
     fun endTurn(s: DuelState, player: Int): DuelResult {
         attackerCheck(s, player)?.let { return DuelResult.Rejected(it) }
+        val me = s.players[player]
+        // The volley's results come in now.
+        val s = s.withPlayer(player, me.copy(intel = me.intel + me.pending, pending = emptyMap()))
         val battle = s.battle!!
         if (battle.turn + 1 < battle.order.size) return DuelResult.Ok(s.copy(battle = battle.copy(turn = battle.turn + 1)))
         return DuelResult.Ok(endBattle(s))

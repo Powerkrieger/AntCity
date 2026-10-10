@@ -34,6 +34,11 @@ val VARIANTS: Map<String, DuelConfig> = linkedMapOf(
     "blind-shots-tower-2" to DuelConfig(rules = DuelRules(blindShots = true, towerScouts = 2)),
     "radius-3-blind-shots" to DuelConfig(radius = 3, rules = DuelRules(blindShots = true)),
     "radius-3-blind-shots-tower-2" to DuelConfig(radius = 3, rules = DuelRules(blindShots = true, towerScouts = 2)),
+    // Results only after the whole volley, so shooting can't be adjusted mid-turn.
+    "salvo" to DuelConfig(rules = DuelRules(salvo = true)),
+    "salvo-blind" to DuelConfig(rules = DuelRules(salvo = true, blindShots = true)),
+    "radius-3-salvo" to DuelConfig(radius = 3, rules = DuelRules(salvo = true)),
+    "radius-3-salvo-blind" to DuelConfig(radius = 3, rules = DuelRules(salvo = true, blindShots = true)),
 )
 
 private fun usage(): Nothing {
