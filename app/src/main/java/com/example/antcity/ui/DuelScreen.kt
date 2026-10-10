@@ -20,7 +20,18 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -287,10 +298,25 @@ private data class Cell(
     val ghost: Boolean = false,
 )
 
+/**
+ * A hex board. While a building is placed but not confirmed ([ghost]), it can be dragged around:
+ * [onGhostDrag] gets the tile under the finger, or null off the board, and null again when the drag ends.
+ */
 @Composable
-private fun DuelBoard(radius: Int, cells: Map<Hex, Cell>, highlight: Hex?, invalid: Hex? = null, modifier: Modifier = Modifier, onTap: ((Hex) -> Unit)? = null) {
+private fun DuelBoard(
+    radius: Int,
+    cells: Map<Hex, Cell>,
+    highlight: Hex?,
+    invalid: Hex? = null,
+    modifier: Modifier = Modifier,
+    ghost: Hex? = null,
+    onGhostDrag: ((Hex?) -> Unit)? = null,
+    onTap: ((Hex) -> Unit)? = null,
+) {
     val sprites = LocalSprites.current
     val tap by rememberUpdatedState(onTap)
+    val currentGhost by rememberUpdatedState(ghost)
+    val ghostDrag by rememberUpdatedState(onGhostDrag)
     Canvas(
         modifier.fillMaxWidth().aspectRatio(boardAspect(radius)).clipToBounds()
             .pointerInput(radius) {
@@ -298,6 +324,25 @@ private fun DuelBoard(radius: Int, cells: Map<Hex, Cell>, highlight: Hex?, inval
                     val h = HexGeometry(size.width.toFloat(), size.height.toFloat(), radius).hexAt(p)
                     if (h.length <= radius) tap?.invoke(h)
                 }
+            }
+            .pointerInput(radius) {
+                var moving = false
+                fun hexAt(p: Offset) = HexGeometry(size.width.toFloat(), size.height.toFloat(), radius).hexAt(p).takeIf { it.length <= radius }
+                fun end() {
+                    if (moving) ghostDrag?.invoke(null)
+                    moving = false
+                }
+                detectDragGestures(
+                    onDragStart = { p -> moving = currentGhost != null && hexAt(p) == currentGhost },
+                    onDrag = { change, _ ->
+                        if (moving) {
+                            change.consume()
+                            ghostDrag?.invoke(hexAt(change.position))
+                        }
+                    },
+                    onDragEnd = ::end,
+                    onDragCancel = ::end,
+                )
             },
     ) {
         val g = HexGeometry(size.width, size.height, radius)
@@ -357,6 +402,31 @@ private fun BuildView(s: DuelState, vm: DuelViewModel) {
     val ghost = vm.ghost
     val preview = if (type != null && ghost != null) me.board + Building(type, ghost) else me.board
 
+    // Drag and drop. Positions are in root coordinates.
+    var dragPos by remember { mutableStateOf<Offset?>(null) }
+    var hover by remember { mutableStateOf<Hex?>(null) }
+    var boardRect by remember { mutableStateOf(Rect.Zero) }
+    var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    // A dragged card floats above the finger so the target tile stays visible.
+    val lift = with(LocalDensity.current) { 72.dp.toPx() }
+
+    fun hexAtRoot(p: Offset): Hex? {
+        if (!boardRect.contains(p)) return null
+        val h = HexGeometry(boardRect.width, boardRect.height, s.config.radius).hexAt(p - boardRect.topLeft)
+        return h.takeIf { it.length <= s.config.radius }
+    }
+
+    fun dragCard(p: Offset) {
+        dragPos = p
+        hover = hexAtRoot(p - Offset(0f, lift))
+        vm.moveGhost(hover)
+    }
+
+    fun endCardDrag() {
+        dragPos = null
+        hover = null
+    }
+
     val heat = remember(me.board, type) {
         if (type == null) emptyMap()
         else {
@@ -371,48 +441,113 @@ private fun BuildView(s: DuelState, vm: DuelViewModel) {
     heat.forEach { (h, v) -> if (h !in cells) cells[h] = Cell(heat = v) }
     if (type != null && ghost != null) cells[ghost] = Cell(building = type, ghost = true)
 
+    Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
     Column(Modifier.fillMaxSize()) {
         YieldPills(s.config.rules.production(preview), s.config.rules.production(me.board))
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-            DuelBoard(s.config.radius, cells, highlight = null, invalid = vm.invalid, onTap = vm::tapOwn)
+            DuelBoard(
+                s.config.radius, cells,
+                highlight = null,
+                invalid = vm.invalid ?: hover?.takeIf { !me.board.isFree(it) },
+                modifier = Modifier.onGloballyPositioned { boardRect = it.boundsInRoot() },
+                ghost = ghost,
+                onGhostDrag = { h ->
+                    hover = h
+                    if (h != null && me.board.isFree(h)) vm.moveGhost(h)
+                },
+                onTap = vm::tapOwn,
+            )
         }
         if (me.picked) {
             Panel { Waiting("${names(vm)[Duel.opponent(vm.viewer)]} is building…") }
             return@Column
         }
         Panel {
-            // Fixed height, so the board doesn't move when a building is selected.
-            Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.CenterStart) {
-              if (type != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+            // Fixed height, so the board doesn't move as the hint changes.
+            Column(Modifier.fillMaxWidth().height(56.dp), verticalArrangement = Arrangement.Center) {
+                when {
+                    type == null -> Text("Pick a building", style = MaterialTheme.typography.titleMedium)
+                    else -> {
                         Text(type.label(), style = MaterialTheme.typography.titleMedium)
-                        Text(type.blurb(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (ghost != null) {
-                        FilledIconButton(onClick = vm::confirm, Modifier.size(56.dp)) { Text("✓", fontSize = 26.sp, color = Color.White) }
-                    }
-                }
-              }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                offers.forEachIndexed { i, t ->
-                    Card(
-                        onClick = { vm.select(i) },
-                        modifier = Modifier.weight(1f),
-                        border = when {
-                            vm.selected == i -> BorderStroke(3.dp, MaterialTheme.colorScheme.primary)
-                            t == DuelBuilding.TOWN_HALL -> BorderStroke(2.dp, GOLD)
-                            else -> null
-                        },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Box(Modifier.fillMaxWidth().padding(6.dp), contentAlignment = Alignment.Center) {
-                            SpriteIcon(t.spriteKey, t.emoji(), 56.dp)
-                        }
+                        Text(
+                            when {
+                                ghost != null -> type.blurb()
+                                heat.values.any { it > 0f } -> "Tap a tile, greener is better"
+                                else -> "Tap a tile"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
+            // Once placed, only confirm or take it back. The cards stay while one is dragged, or the drag would end.
+            if (ghost != null && dragPos == null) {
+                Row(Modifier.height(68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = vm::unplace, Modifier.weight(1f).fillMaxHeight()) { Text("✕", fontSize = 26.sp) }
+                    Button(onClick = vm::confirm, Modifier.weight(1f).fillMaxHeight()) { Text("✓", fontSize = 26.sp) }
+                }
+            } else {
+                Row(Modifier.height(68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    offers.forEachIndexed { i, t ->
+                        OfferCard(
+                            t, vm.selected == i, Modifier.weight(1f),
+                            onClick = { vm.select(i) },
+                            onDragStart = { p -> vm.beginDrag(i); dragCard(p) },
+                            onDrag = ::dragCard,
+                            onDragEnd = ::endCardDrag,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // The dragged building, while it isn't sitting on a free tile.
+    dragPos?.takeIf { ghost == null && type != null }?.let { p ->
+        val q = p - rootOrigin - Offset(0f, lift)
+        val half = with(LocalDensity.current) { 32.dp.toPx() }
+        SpriteIcon(type!!.spriteKey, type.emoji(), 64.dp, Modifier.offset { IntOffset((q.x - half).roundToInt(), (q.y - half).roundToInt()) })
+    }
+    }
+}
+
+@Composable
+private fun OfferCard(
+    type: DuelBuilding,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val start by rememberUpdatedState(onDragStart)
+    val move by rememberUpdatedState(onDrag)
+    val end by rememberUpdatedState(onDragEnd)
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxHeight()
+            .onGloballyPositioned { origin = it.positionInRoot() }
+            .pointerInput(Unit) {
+                var p = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { p = origin + it; start(p) },
+                    onDrag = { change, amount -> change.consume(); p += amount; move(p) },
+                    onDragEnd = { end() },
+                    onDragCancel = { end() },
+                )
+            },
+        border = when {
+            selected -> BorderStroke(3.dp, MaterialTheme.colorScheme.primary)
+            type == DuelBuilding.TOWN_HALL -> BorderStroke(2.dp, GOLD)
+            else -> null
+        },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Box(Modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.Center) {
+            SpriteIcon(type.spriteKey, type.emoji(), 56.dp)
         }
     }
 }

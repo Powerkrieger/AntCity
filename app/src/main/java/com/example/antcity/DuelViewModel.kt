@@ -140,6 +140,27 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         invalid = hex.takeIf { !free }
     }
 
+    /** A card is being dragged towards the board. */
+    fun beginDrag(offer: Int) {
+        selected = offer
+        ghost = null
+        invalid = null
+    }
+
+    /** Puts the selected building on [hex] while dragging; off the board or on a taken tile it's lifted off. */
+    fun moveGhost(hex: Hex?) {
+        val s = state ?: return
+        if (selected == null || s.stage != Stage.BUILD) return
+        ghost = hex?.takeIf(s.players[viewer].board::isFree)
+        invalid = null
+    }
+
+    /** Takes the placed building back off the board; it stays selected. */
+    fun unplace() {
+        ghost = null
+        invalid = null
+    }
+
     fun confirm() {
         val offer = selected ?: return
         val hex = ghost ?: return
