@@ -40,8 +40,11 @@ private enum class Tab(val label: String, val icon: String) {
 @Composable
 fun AntCityApp(vm: GameViewModel) {
     val city = vm.city
-    if (vm.game == null || city == null) {
-        SetupScreen(vm)
+    var sandbox by rememberSaveable { mutableStateOf(false) }
+    if (sandbox) {
+        SandboxScreen(onClose = { sandbox = false })
+    } else if (vm.game == null || city == null) {
+        SetupScreen(vm) { sandbox = true }
     } else {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         Scaffold(
@@ -64,7 +67,7 @@ fun AntCityApp(vm: GameViewModel) {
                     Tab.CITY -> CityScreen(vm, city)
                     Tab.ARMY -> ArmyScreen(vm, city)
                     Tab.RAID -> RaidScreen(vm, city)
-                    Tab.SETTINGS -> SettingsScreen(vm)
+                    Tab.SETTINGS -> SettingsScreen(vm) { sandbox = true }
                 }
             }
         }
@@ -113,7 +116,7 @@ private fun ResourceBar(s: GameState, vm: GameViewModel) {
 }
 
 @Composable
-private fun SetupScreen(vm: GameViewModel) {
+private fun SetupScreen(vm: GameViewModel, openSandbox: () -> Unit) {
     var url by rememberSaveable { mutableStateOf("https://") }
     var name by rememberSaveable { mutableStateOf("") }
     Column(
@@ -131,11 +134,12 @@ private fun SetupScreen(vm: GameViewModel) {
         ) {
             if (vm.busy) CircularProgressIndicator(Modifier.height(20.dp)) else Text("Found city")
         }
+        TextButton(onClick = openSandbox, modifier = Modifier.fillMaxWidth()) { Text("🔷 Try the layout sandbox (offline)") }
     }
 }
 
 @Composable
-private fun SettingsScreen(vm: GameViewModel) {
+private fun SettingsScreen(vm: GameViewModel, openSandbox: () -> Unit) {
     val g = vm.game ?: return
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -144,6 +148,7 @@ private fun SettingsScreen(vm: GameViewModel) {
         Text("Server version: ${g.snapshot.version}")
         Text("Actions waiting for upload: ${g.pending.size}")
         Button(onClick = { vm.syncNowAsync() }) { Text("Sync now") }
+        Button(onClick = openSandbox) { Text("🔷 Layout sandbox") }
         TextButton(onClick = { confirmLogout = true }) { Text("Log out on this device") }
     }
     if (confirmLogout) {
