@@ -71,6 +71,11 @@ data class DuelRules(
     val maxWallBonus: Int = 2,
     /** Materials for one extra shot or scout. */
     val extraActionCost: Int = 2,
+    /**
+     * Shots only show their result on tiles scouted this battle; elsewhere the shooter just knows
+     * they fired there. Stops carpet-firing from doubling as scouting.
+     */
+    val blindShots: Boolean = false,
 ) {
     fun hp(type: DuelBuilding) = when (type) {
         DuelBuilding.TOWN_HALL -> hallHp
@@ -119,7 +124,11 @@ data class DuelConfig(
     val rules: DuelRules = DuelRules(),
 )
 
-enum class Shot { MISS, HIT, DESTROYED }
+enum class Shot {
+    MISS, HIT, DESTROYED,
+    /** Fired at an unscouted tile with [DuelRules.blindShots]: the result isn't known. */
+    FIRED,
+}
 
 /**
  * What a player knows about one enemy tile, from the phase it was learned in. Scouting the tile
@@ -260,7 +269,7 @@ object Duel {
         if (!enemy.inBounds(hex)) return DuelResult.Rejected("Off the map")
         val me = s.players[player]
         val b = enemy[hex]
-        val (board, intel, kills) = when {
+        val (board, seen, kills) = when {
             b == null -> Triple(enemy, Intel(false, shot = Shot.MISS, phase = s.phase), 0)
             b.damage + 1 >= s.config.rules.maxHp(enemy, b) -> {
                 val (after, destroyed) = destroy(s.config.rules, enemy, hex)
@@ -268,6 +277,9 @@ object Duel {
             }
             else -> Triple(enemy.replace(b.copy(damage = b.damage + 1)), Intel(true, b.type, Shot.HIT, s.phase), 0)
         }
+        // Scouted this battle (and not just blindly fired at): the result is visible.
+        val scouted = me.intel[hex]?.let { it.phase == s.phase && it.shot != Shot.FIRED } == true
+        val intel = if (!s.config.rules.blindShots || scouted) seen else Intel(false, shot = Shot.FIRED, phase = s.phase)
         return DuelResult.Ok(
             s.withPlayer(target, s.players[target].copy(board = board))
                 .withPlayer(player, me.copy(intel = me.intel + (hex to intel), kills = me.kills + kills))

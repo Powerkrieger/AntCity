@@ -108,6 +108,27 @@ class DuelTest {
     }
 
     @Test
+    fun blindShotsOnlyShowResultsOnScoutedTiles() {
+        var s = toFirstBattle()
+        s = s.copy(config = s.config.copy(rules = DuelRules(blindShots = true)))
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 3) else p })
+        s = Duel.buy(Duel.buy(Duel.buy(s, 0, Extra.SHOT).ok(), 0, Extra.SHOT).ok(), 0, Extra.SCOUT).ok()
+        val ring = o.neighbors()
+
+        // Unscouted: the hit lands, but the shooter only learns that they fired.
+        s = Duel.shoot(s, 0, ring[1]).ok()
+        assertEquals(Shot.FIRED, s.players[0].intel[ring[1]]?.shot)
+        assertEquals(1, s.players[1].board[ring[1]]?.damage ?: 1)
+
+        // Scouted: results show, including on a tile fired at blindly before.
+        s = Duel.scout(s, 0, o).ok()
+        s = Duel.shoot(s, 0, o).ok()
+        assertEquals(Shot.HIT, s.players[0].intel[o]?.shot)
+        s = Duel.shoot(s, 0, ring[0]).ok()
+        assertEquals(Shot.MISS, s.players[0].intel[ring[0]]?.shot)
+    }
+
+    @Test
     fun quietBattleMovesToTheNextPhaseWithTheOtherPlayerFirst() {
         var s = toFirstBattle()
         s = Duel.endTurn(s, 0).ok()

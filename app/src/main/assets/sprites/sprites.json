@@ -10,6 +10,7 @@
     "tile.miss": "tiles/miss.png",
     "tile.unknown": "tiles/unknown.png",
     "tile.crack": "tiles/crack.png",
+    "tile.fired": "tiles/fired.png",
 
     "building.town_hall": "buildings/town_hall.png",
     "building.house": "buildings/house.png",

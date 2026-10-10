@@ -72,6 +72,8 @@ object TileSprites {
     const val MISS = "tile.miss"
     const val UNKNOWN = "tile.unknown"
     const val CRACK = "tile.crack"
+    /** Fired at blindly; the result is unknown. */
+    const val FIRED = "tile.fired"
 }
 
 /** Draws [image] as a square of [size] pixels centred on [center]. */

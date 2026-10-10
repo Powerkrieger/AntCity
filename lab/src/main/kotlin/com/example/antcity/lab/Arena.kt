@@ -6,7 +6,6 @@ import com.example.antcity.core.duel.DuelConfig
 import com.example.antcity.core.duel.DuelMove
 import com.example.antcity.core.duel.DuelPlayer
 import com.example.antcity.core.duel.DuelResult
-import com.example.antcity.core.duel.DuelRules
 import com.example.antcity.core.duel.DuelState
 import com.example.antcity.core.duel.Outcome
 import com.example.antcity.core.duel.Stage
@@ -24,6 +23,7 @@ class MatchStats {
     val picked = IntArray(DuelBuilding.entries.size)
     /** Town Hall distance from the centre, per player. */
     val hallRing = IntArray(Duel.PLAYERS)
+    var radius = 0
     /** Build round (0-based) the Town Hall was placed in, per player. */
     val hallRound = IntArray(Duel.PLAYERS)
     var shots = 0
@@ -35,9 +35,9 @@ class MatchStats {
 
 object Arena {
 
-    /** Plays one match; [stats] is filled in if given. Returns the winner, or -1 for a draw. */
-    fun play(rules: DuelRules, seed: Long, players: List<DuelPlayer>, stats: MatchStats? = null): Int {
-        var s = Duel.start(DuelConfig(seed = seed, rules = rules))
+    /** Plays one match of [config] with [seed]; [stats] is filled in if given. Returns the winner, or -1 for a draw. */
+    fun play(config: DuelConfig, seed: Long, players: List<DuelPlayer>, stats: MatchStats? = null): Int {
+        var s = Duel.start(config.copy(seed = seed))
         var guard = 0
         while (s.stage != Stage.OVER) {
             val who = s.actor()!!
@@ -55,6 +55,7 @@ object Arena {
         }
         val o = s.outcome
         stats?.apply {
+            radius = s.config.radius
             endPhase = s.phase
             if (o is Outcome.Win) {
                 winner = o.player
@@ -119,6 +120,8 @@ class Summary(val matches: List<MatchStats>) {
     val shotsPerBattle get() = matches.sumOf { it.shots }.toDouble() / matches.sumOf { it.battles * 2 }.coerceAtLeast(1)
     val scoutsPerBattle get() = matches.sumOf { it.scouts }.toDouble() / matches.sumOf { it.battles * 2 }.coerceAtLeast(1)
     val hitRate get() = matches.sumOf { it.hits }.toDouble() / matches.sumOf { it.shotsFired }.coerceAtLeast(1)
-    fun hallRingShare(ring: Int) = matches.sumOf { m -> m.hallRing.count { it == ring } }.toDouble() / (2 * n)
+    /** Share of Town Halls on the outer ring, and what random placement would give. */
+    val hallOnEdge get() = matches.sumOf { m -> m.hallRing.count { it == m.radius } }.toDouble() / (2 * n)
+    val edgeIfRandom get() = matches.firstOrNull()?.radius?.let { r -> 6.0 * r / (3 * r * (r + 1) + 1) } ?: 0.0
     val avgHallRound get() = matches.sumOf { it.hallRound.sum() }.toDouble() / (2 * n)
 }

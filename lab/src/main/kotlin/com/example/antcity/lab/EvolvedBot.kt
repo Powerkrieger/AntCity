@@ -41,7 +41,9 @@ enum class Gene(val init: Double) {
     // Where to scout.
     SCOUT_UNKNOWN(1.0), SCOUT_RING(0.0), SCOUT_STALE(0.0),
     // Where to shoot (a known enemy hall always comes first).
-    SHOT_KNOWN(5.0), SHOT_DAMAGED(1.0), SHOT_UNKNOWN(0.0), SHOT_RING(0.0), SHOT_NEAR_KNOWN(0.0), SHOT_STALE(0.0);
+    SHOT_KNOWN(5.0), SHOT_DAMAGED(1.0), SHOT_UNKNOWN(0.0), SHOT_RING(0.0), SHOT_NEAR_KNOWN(0.0), SHOT_STALE(0.0),
+    /** Firing again at a tile already fired at blindly (result unknown). */
+    SHOT_REFIRE(-1.0);
 
     companion object {
         val SIZE = entries.size
@@ -135,6 +137,8 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
         fun fresh(h: Hex): Intel? = me.intel[h]?.takeIf { it.phase == s.phase }
         fun stale(h: Hex): Intel? = me.intel[h]?.takeIf { it.phase < s.phase }
         fun alive(i: Intel?) = i != null && i.occupied && i.shot != Shot.DESTROYED
+        // Blindly fired at: still unknown.
+        fun unknown(h: Hex) = fresh(h).let { it == null || it.shot == Shot.FIRED }
         val hallKnown = hexes.firstOrNull { fresh(it)?.type == DuelBuilding.TOWN_HALL && alive(fresh(it)) }
 
         val canBuy = me.materials >= s.config.rules.extraActionCost
@@ -146,7 +150,7 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
         if (budget.scouts > 0 && hallKnown == null) {
             val target = hexes.maxBy { h ->
                 val area = (listOf(h) + h.neighbors()).filter { it.length <= s.config.radius }
-                g[Gene.SCOUT_UNKNOWN] * area.count { fresh(it) == null } +
+                g[Gene.SCOUT_UNKNOWN] * area.count(::unknown) +
                     g[Gene.SCOUT_RING] * ring(s, h) +
                     g[Gene.SCOUT_STALE] * area.count { stale(it)?.occupied == true } +
                     noise()
@@ -158,9 +162,10 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
             val target = hexes.maxBy { h ->
                 val f = fresh(h)
                 when {
-                    f != null && !alive(f) -> Double.NEGATIVE_INFINITY // known empty, missed or already destroyed
-                    f != null -> g[Gene.SHOT_KNOWN] + (if (f.shot == Shot.HIT) g[Gene.SHOT_DAMAGED] else 0.0)
+                    f != null && f.shot != Shot.FIRED && !alive(f) -> Double.NEGATIVE_INFINITY // known empty, missed or destroyed
+                    f != null && f.shot != Shot.FIRED -> g[Gene.SHOT_KNOWN] + (if (f.shot == Shot.HIT) g[Gene.SHOT_DAMAGED] else 0.0)
                     else -> g[Gene.SHOT_UNKNOWN] +
+                        (if (f?.shot == Shot.FIRED) g[Gene.SHOT_REFIRE] else 0.0) +
                         g[Gene.SHOT_RING] * ring(s, h) +
                         g[Gene.SHOT_NEAR_KNOWN] * h.neighbors().count { alive(fresh(it)) } +
                         g[Gene.SHOT_STALE] * (if (stale(h)?.occupied == true) 1 else 0)

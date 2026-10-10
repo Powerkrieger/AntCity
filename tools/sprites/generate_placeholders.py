@@ -127,6 +127,15 @@ def crack(p):
     p.line([(62, 84), (80, 90)], fill=dark, width=3)
 
 
+def fired(p):
+    """Crosshair: fired here, result unknown."""
+    c = p.size / 2
+    white = (255, 255, 255, 230)
+    p.ellipse(c - 26, c - 26, c + 26, c + 26, None, outline=white, width=4)
+    for a, b in (((c, c - 40), (c, c - 14)), ((c, c + 14), (c, c + 40)), ((c - 40, c), (c - 14, c)), ((c + 14, c), (c + 40, c))):
+        p.line([a, b], fill=white, width=4)
+
+
 # --- Buildings --------------------------------------------------------------------------------
 # Drawn front-on inside roughly 16..112, standing on a shadow near the bottom.
 
@@ -294,7 +303,7 @@ def food(p):
 DRAWERS = {
     "tile.grass_1": grass(1), "tile.grass_2": grass(2), "tile.grass_3": grass(3),
     "tile.foundation": foundation, "tile.fog": fog, "tile.hit": hit, "tile.miss": miss,
-    "tile.unknown": unknown, "tile.crack": crack, "building.quarry": quarry,
+    "tile.unknown": unknown, "tile.crack": crack, "tile.fired": fired, "building.quarry": quarry,
     "building.town_hall": town_hall, "building.house": house, "building.farm": farm, "building.wall": wall,
     "building.tower": tower, "building.barracks": barracks, "building.market": market,
     "building.artillery": artillery, "building.gate": gate, "building.hangar": hangar,

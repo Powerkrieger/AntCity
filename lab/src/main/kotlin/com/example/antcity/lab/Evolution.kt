@@ -1,7 +1,7 @@
 package com.example.antcity.lab
 
 import com.example.antcity.core.duel.DuelBot
-import com.example.antcity.core.duel.DuelRules
+import com.example.antcity.core.duel.DuelConfig
 import java.util.Random
 
 /**
@@ -10,7 +10,7 @@ import java.util.Random
  * the better half.
  */
 class Evolution(
-    private val rules: DuelRules,
+    private val config: DuelConfig,
     private val populationSize: Int,
     private val seedsPerPair: Int,
     private val threads: Int,
@@ -42,7 +42,7 @@ class Evolution(
     private fun roundRobin(genomes: List<Genome>, seeds: List<Long>): List<Scored> {
         val tasks = buildList {
             for (i in genomes.indices) for (j in genomes.indices) if (i != j) for (seed in seeds) {
-                add { Triple(i, j, Arena.play(rules, seed, listOf(EvolvedBot(genomes[i]), EvolvedBot(genomes[j])))) }
+                add { Triple(i, j, Arena.play(config, seed, listOf(EvolvedBot(genomes[i]), EvolvedBot(genomes[j])))) }
             }
         }
         val points = DoubleArray(genomes.size)
@@ -65,7 +65,7 @@ class Evolution(
             {
                 val seat = k % 2
                 val players = if (seat == 0) listOf(EvolvedBot(g), DuelBot) else listOf(DuelBot, EvolvedBot(g))
-                when (Arena.play(rules, 1_000_000L + k, players)) {
+                when (Arena.play(config, 1_000_000L + k, players)) {
                     seat -> 1.0
                     -1 -> 0.5
                     else -> 0.0
