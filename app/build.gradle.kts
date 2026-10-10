@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.antcity"
+        applicationId = "de.powerizzle.antcity"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
