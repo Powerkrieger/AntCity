@@ -2,6 +2,19 @@ package com.example.antcity.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
+import com.example.antcity.net.BluetoothTransport
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -121,9 +134,17 @@ fun DuelScreen(onClose: () -> Unit, vm: DuelViewModel = viewModel()) {
         }
     }
     val s = vm.state
-    BackHandler { if (s == null) onClose() else vm.quit() }
+    val lobby = vm.lobby
+    BackHandler {
+        when {
+            lobby != null -> vm.closeLobby()
+            s == null -> onClose()
+            else -> vm.quit()
+        }
+    }
     when {
-        s == null -> DuelMenu(onClose, vm::start)
+        lobby != null -> LobbyScreen(vm, lobby)
+        s == null -> DuelMenu(onClose, vm::start, vm::openLobby)
         vm.covered -> HandOver(vm.viewer) { vm.uncover() }
         else -> Surface(Modifier.fillMaxSize(), color = if (s.stage == Stage.BATTLE && !vm.showOwn) BATTLEFIELD else FIELD) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -136,11 +157,25 @@ fun DuelScreen(onClose: () -> Unit, vm: DuelViewModel = viewModel()) {
             }
         }
     }
-    vm.report?.let { r -> ReportDialog(r, vm.vsBot) { vm.report = null } }
+    vm.report?.let { r -> ReportDialog(r, names(vm)) { vm.report = null } }
+    vm.notice?.let { text ->
+        AlertDialog(
+            onDismissRequest = { vm.notice = null },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = { vm.notice = null }) { Text("OK") } },
+        )
+    }
+}
+
+/** How each player is called on this device. */
+private fun names(vm: DuelViewModel): List<String> = when (vm.mode) {
+    DuelViewModel.Mode.BOT -> listOf("You", "The bot")
+    DuelViewModel.Mode.PASS -> listOf("Player 1", "Player 2")
+    DuelViewModel.Mode.ONLINE -> List(Duel.PLAYERS) { if (it == vm.viewer) "You" else vm.opponent ?: "Opponent" }
 }
 
 @Composable
-private fun DuelMenu(onClose: () -> Unit, start: (Boolean) -> Unit) {
+private fun DuelMenu(onClose: () -> Unit, start: (DuelViewModel.Mode) -> Unit, nearby: () -> Unit) {
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
@@ -148,8 +183,9 @@ private fun DuelMenu(onClose: () -> Unit, start: (Boolean) -> Unit) {
     ) {
         SpriteIcon(DuelBuilding.TOWN_HALL.spriteKey, "🏛️", 120.dp)
         Text("Duel", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Button(onClick = { start(true) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Against the bot", fontSize = 18.sp) }
-        Button(onClick = { start(false) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Two players, one phone", fontSize = 18.sp) }
+        Button(onClick = nearby, Modifier.fillMaxWidth().height(64.dp)) { Text("Two phones, nearby", fontSize = 18.sp) }
+        Button(onClick = { start(DuelViewModel.Mode.PASS) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Two players, one phone", fontSize = 18.sp) }
+        Button(onClick = { start(DuelViewModel.Mode.BOT) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Against the bot", fontSize = 18.sp) }
         TextButton(onClick = onClose) { Text("Back") }
     }
 }
@@ -179,7 +215,7 @@ private fun TopBar(s: DuelState, vm: DuelViewModel) {
         Box(
             Modifier.size(36.dp).background(PLAYER_COLORS[vm.viewer], CircleShape).border(2.dp, Color.White, CircleShape),
             contentAlignment = Alignment.Center,
-        ) { Text(if (vm.vsBot) "★" else "${vm.viewer + 1}", color = Color.White, fontWeight = FontWeight.Bold) }
+        ) { Text(if (vm.mode == DuelViewModel.Mode.PASS) "${vm.viewer + 1}" else "★", color = Color.White, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.width(8.dp))
     }
 }
@@ -340,6 +376,10 @@ private fun BuildView(s: DuelState, vm: DuelViewModel) {
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
             DuelBoard(s.config.radius, cells, highlight = null, invalid = vm.invalid, onTap = vm::tapOwn)
         }
+        if (me.picked) {
+            Panel { Waiting("${names(vm)[Duel.opponent(vm.viewer)]} is building…") }
+            return@Column
+        }
         Panel {
             // Fixed height, so the board doesn't move when a building is selected.
             Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.CenterStart) {
@@ -390,7 +430,18 @@ private fun Panel(content: @Composable () -> Unit) {
 private fun BattleView(s: DuelState, vm: DuelViewModel) {
     val me = s.players[vm.viewer]
     val enemy = s.players[Duel.opponent(vm.viewer)]
-    val budget = s.battle!!.budgets[vm.viewer]
+    val battle = s.battle!!
+    val budget = battle.budgets[vm.viewer]
+    if (battle.attacker != vm.viewer) {
+        // Only online: watch your own town while the opponent attacks it.
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                DuelBoard(s.config.radius, townCells(s, vm.viewer), highlight = null, modifier = Modifier.border(3.dp, PLAYER_COLORS[vm.viewer], RoundedCornerShape(12.dp)))
+            }
+            Panel { Waiting("${names(vm)[Duel.opponent(vm.viewer)]} is attacking…") }
+        }
+        return
+    }
     val cells = if (vm.showOwn) townCells(s, vm.viewer) else Hex.disk(s.config.radius).associateWith { intelCell(me.intel[it], s.phase) }
 
     Column(Modifier.fillMaxSize()) {
@@ -404,8 +455,8 @@ private fun BattleView(s: DuelState, vm: DuelViewModel) {
         }
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeButton(SCOUTS, "👁️", budget.scouts, vm.mode == Extra.SCOUT && !vm.showOwn, Modifier.weight(1f)) { vm.mode = Extra.SCOUT; vm.showOwn = false }
-                ModeButton(SHOTS, "⚔️", budget.shots, vm.mode == Extra.SHOT && !vm.showOwn, Modifier.weight(1f)) { vm.mode = Extra.SHOT; vm.showOwn = false }
+                ModeButton(SCOUTS, "👁️", budget.scouts, vm.action == Extra.SCOUT && !vm.showOwn, Modifier.weight(1f)) { vm.action = Extra.SCOUT; vm.showOwn = false }
+                ModeButton(SHOTS, "⚔️", budget.shots, vm.action == Extra.SHOT && !vm.showOwn, Modifier.weight(1f)) { vm.action = Extra.SHOT; vm.showOwn = false }
                 FilledTonalIconButton(
                     onClick = { vm.showOwn = !vm.showOwn },
                     Modifier.size(56.dp),
@@ -415,10 +466,10 @@ private fun BattleView(s: DuelState, vm: DuelViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Materials buy one more of the selected action.
                 val canBuy = me.materials >= DuelRules.EXTRA_ACTION_COST && !vm.showOwn
-                OutlinedButton(onClick = { vm.buy(vm.mode) }, enabled = canBuy, modifier = Modifier.weight(1f).height(52.dp)) {
+                OutlinedButton(onClick = { vm.buy(vm.action) }, enabled = canBuy, modifier = Modifier.weight(1f).height(52.dp)) {
                     SpriteIcon(MATERIALS, "⛏️", 22.dp)
                     Text(" ${me.materials}  →  +1 ", fontWeight = FontWeight.Bold)
-                    SpriteIcon(if (vm.mode == Extra.SCOUT) SCOUTS else SHOTS, "+", 22.dp)
+                    SpriteIcon(if (vm.action == Extra.SCOUT) SCOUTS else SHOTS, "+", 22.dp)
                 }
                 Button(
                     onClick = vm::endTurn,
@@ -449,13 +500,12 @@ private fun ModeButton(icon: String, fallback: String, count: Int, selected: Boo
 
 // --- End --------------------------------------------------------------------------------------
 
-private fun playerName(p: Int, vsBot: Boolean) = if (vsBot) (if (p == 0) "You" else "The bot") else "Player ${p + 1}"
-
 @Composable
 private fun OverView(s: DuelState, vm: DuelViewModel) {
     val outcome = s.outcome
+    val names = names(vm)
     val title = when (outcome) {
-        is Outcome.Win -> if (vm.vsBot) (if (outcome.player == 0) "You win!" else "The bot wins") else "Player ${outcome.player + 1} wins!"
+        is Outcome.Win -> if (names[outcome.player] == "You") "You win!" else "${names[outcome.player]} wins!"
         else -> "Draw"
     }
     Column(Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -467,18 +517,23 @@ private fun OverView(s: DuelState, vm: DuelViewModel) {
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             s.players.indices.forEach { i ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(playerName(i, vm.vsBot), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(names[i], color = Color.White, fontWeight = FontWeight.Bold)
                     DuelBoard(s.config.radius, townCells(s, i), highlight = null, modifier = Modifier.border(3.dp, PLAYER_COLORS[i], RoundedCornerShape(12.dp)))
                 }
             }
         }
-        Button(onClick = { vm.start(vm.vsBot) }, Modifier.fillMaxWidth().height(56.dp)) { Text("Play again", fontSize = 18.sp) }
+        val online = vm.mode == DuelViewModel.Mode.ONLINE
+        when {
+            !online || (vm.isHost && vm.connected) ->
+                Button(onClick = vm::playAgain, Modifier.fillMaxWidth().height(56.dp)) { Text("Play again", fontSize = 18.sp) }
+            vm.connected -> Text("The host can start another match", color = Color.White)
+        }
         TextButton(onClick = vm::quit) { Text("Menu", color = Color.White) }
     }
 }
 
 @Composable
-private fun ReportDialog(r: DuelViewModel.Report, vsBot: Boolean, onDismiss: () -> Unit) {
+private fun ReportDialog(r: DuelViewModel.Report, names: List<String>, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Battle over") },
@@ -488,7 +543,7 @@ private fun ReportDialog(r: DuelViewModel.Report, vsBot: Boolean, onDismiss: () 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(14.dp).background(PLAYER_COLORS[i], CircleShape))
                         Spacer(Modifier.width(8.dp))
-                        Text(playerName(i, vsBot), Modifier.weight(1f))
+                        Text(names[i], Modifier.weight(1f))
                         SpriteIcon(TileSprites.HIT, "🔥", 22.dp)
                         Text(" $n", fontWeight = FontWeight.Bold)
                     }
@@ -497,4 +552,147 @@ private fun ReportDialog(r: DuelViewModel.Report, vsBot: Boolean, onDismiss: () 
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
     )
+}
+
+@Composable
+private fun Waiting(text: String) {
+    Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        CircularProgressIndicator(Modifier.size(28.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+// --- Lobby ------------------------------------------------------------------------------------
+
+@Composable
+private fun LobbyScreen(vm: DuelViewModel, lobby: DuelViewModel.Lobby) {
+    val bt = vm.bluetooth
+    // What to do once Bluetooth is allowed and on.
+    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun runPending() {
+        pending?.invoke()
+        pending = null
+    }
+    val enable = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (bt.enabled) runPending() else {
+            vm.message = "Bluetooth is off"
+            pending = null
+        }
+    }
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        when {
+            !granted.values.all { it } -> {
+                vm.message = "Bluetooth permission is needed"
+                pending = null
+            }
+            bt.enabled -> runPending()
+            else -> enable.launch(BluetoothTransport.enableIntent())
+        }
+    }
+    // Hosting goes on whether or not the player allows being discoverable: paired phones still connect.
+    val discoverable = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    fun withBluetooth(then: () -> Unit) {
+        if (!bt.available) {
+            vm.message = "This device has no Bluetooth"
+            return
+        }
+        pending = then
+        when {
+            !bt.hasPermissions -> permissions.launch(BluetoothTransport.permissions.toTypedArray())
+            !bt.enabled -> enable.launch(BluetoothTransport.enableIntent())
+            else -> runPending()
+        }
+    }
+
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(24.dp))
+        Text("Two phones", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        when (lobby) {
+            DuelViewModel.Lobby.Choose -> {
+                Text("One phone hosts, the other joins.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LobbySection("Bluetooth") {
+                    Button(
+                        onClick = {
+                            withBluetooth {
+                                discoverable.launch(BluetoothTransport.discoverableIntent())
+                                vm.host(DuelViewModel.Transport.BLUETOOTH)
+                            }
+                        },
+                        Modifier.weight(1f).height(56.dp),
+                    ) { Text("Host") }
+                    Button(onClick = { withBluetooth(vm::browse) }, Modifier.weight(1f).height(56.dp)) { Text("Join") }
+                }
+                LobbySection("Same Wi-Fi") {
+                    OutlinedButton(onClick = { vm.host(DuelViewModel.Transport.WIFI) }, Modifier.weight(1f).height(56.dp)) { Text("Host") }
+                    OutlinedButton(onClick = vm::enterAddress, Modifier.weight(1f).height(56.dp)) { Text("Join") }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = vm::closeLobby) { Text("Back") }
+            }
+            is DuelViewModel.Lobby.Hosting -> {
+                Spacer(Modifier.height(32.dp))
+                CircularProgressIndicator(Modifier.size(56.dp))
+                Text("Waiting for the other phone…", style = MaterialTheme.typography.titleMedium)
+                val hint = when (lobby.transport) {
+                    DuelViewModel.Transport.BLUETOOTH -> "On the other phone, tap Join under Bluetooth and pick"
+                    DuelViewModel.Transport.WIFI -> "On the other phone, tap Join under Same Wi-Fi and enter"
+                }
+                Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                lobby.addresses.ifEmpty { listOf("(no network)") }.forEach { Text(it, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
+            }
+            is DuelViewModel.Lobby.Browsing -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Pick the host. Searching for more…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    lobby.peers.sortedByDescending { it.paired }.forEach { peer ->
+                        Card(onClick = { vm.join(peer) }, Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(peer.name, fontWeight = FontWeight.Bold)
+                                Text(if (peer.paired) "Paired" else peer.address, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
+            }
+            DuelViewModel.Lobby.EnterAddress -> {
+                var address by rememberSaveable { mutableStateOf("") }
+                Text("Enter the address shown on the host", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    address, { address = it.filter { c -> c.isDigit() || c == '.' } },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(onClick = { vm.joinWifi(address) }, enabled = address.count { it == '.' } == 3, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Join") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
+            }
+            is DuelViewModel.Lobby.Connecting -> {
+                Spacer(Modifier.height(32.dp))
+                CircularProgressIndicator(Modifier.size(56.dp))
+                Text("Connecting to ${lobby.name}…", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LobbySection(title: String, buttons: @Composable RowScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), content = buttons)
+    }
 }

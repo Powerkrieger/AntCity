@@ -126,11 +126,7 @@ class DuelTest {
             var s = Duel.start(DuelConfig(seed = seed.toLong()))
             var steps = 0
             while (s.stage != Stage.OVER) {
-                s = when (s.stage) {
-                    Stage.BUILD -> DuelBot.build(s, s.players.indexOfFirst { !it.picked })
-                    Stage.BATTLE -> DuelBot.battle(s, s.battle!!.attacker)
-                    Stage.OVER -> s
-                }
+                s = DuelBot.play(s, s.actor()!!)
                 assertTrue(++steps < 1000)
             }
             assertNotNull(s.outcome)
