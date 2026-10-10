@@ -25,6 +25,7 @@ dependencyResolutionManagement {
 rootProject.name = "AntCity"
 include(":core")
 include(":server")
+include(":lab")
 // The Android app needs the Android SDK; skip it with -PnoApp (e.g. when building only the server).
 if (!providers.gradleProperty("noApp").isPresent) {
     include(":app")

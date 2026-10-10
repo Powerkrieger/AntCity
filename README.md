@@ -35,6 +35,18 @@ buildings destroyed wins. All numbers live in `DuelRules`.
 | ⛏️ Quarry     | 1 material, 2 next to a house                       |
 | 🧱 Wall       | 2 HP; adjacent buildings +1 HP (max 2)              |
 
+### Balance lab
+
+`lab/` evolves bots by self-play for several rule variants (`VARIANTS` in `Lab.kt`) and reports how
+strong bots play each one: when matches end, seat bias, which buildings get picked, where halls hide.
+Pure JVM, meant for a big server:
+
+```sh
+./gradlew :lab:installDist
+rsync -az lab/build/install/lab/ server:antcity-lab/
+ssh server 'cd antcity-lab && nohup nice -n 15 bin/lab sweep --threads 32 --out results/run1 > results/run1.log 2>&1 &'
+```
+
 ## Game (original city builder)
 
 | Building       | Role                                                               |

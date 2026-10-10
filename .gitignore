@@ -12,3 +12,4 @@ build/
 *.env
 server/data/
 server/.env
+lab-results/
