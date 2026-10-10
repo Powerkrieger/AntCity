@@ -28,7 +28,7 @@ fun DuelPlayer.play(s: DuelState, player: Int): DuelState {
     return state
 }
 
-/** A simple opponent: greedy placement, scouts the unknown, shoots what it has found. */
+/** A simple opponent: greedy placement, scouts the unknown, shoots what it has found. The lab's yardstick. */
 object DuelBot : DuelPlayer {
 
     private fun rng(s: DuelState, player: Int): SplitMix {
@@ -79,5 +79,55 @@ object DuelBot : DuelPlayer {
             return DuelMove.Shoot(target)
         }
         return DuelMove.EndTurn
+    }
+}
+
+/**
+ * A beginner: builds half the time where it helps and half the time anywhere, doesn't hide its Town
+ * Hall, scouts and shoots without much of a plan, and never spends materials.
+ */
+object RookieBot : DuelPlayer {
+
+    private fun rng(s: DuelState, player: Int): SplitMix {
+        val budget = s.battle?.budgets?.get(player)
+        return SplitMix(s.config.seed * 57 + s.phase * 1_009 + s.round * 11 + player + (budget?.let { it.shots * 5 + it.scouts * 17 } ?: 0) * 100_003L)
+    }
+
+    override fun next(s: DuelState, player: Int): DuelMove {
+        val rng = rng(s, player)
+        if (s.stage == Stage.BUILD) {
+            val board = s.players[player].board
+            val offers = Duel.offers(s, player)
+            val free = board.freeHexes
+            val hall = offers.indexOf(DuelBuilding.TOWN_HALL)
+            if (hall >= 0) return DuelMove.Place(hall, free[rng.nextInt(free.size)])
+            val i = rng.nextInt(offers.size)
+            if (rng.nextInt(2) == 0) return DuelMove.Place(i, free[rng.nextInt(free.size)])
+            return DuelMove.Place(i, free.maxBy { s.config.rules.gain(board, offers[i], it) * 4 + rng.nextInt(4) })
+        }
+        val me = s.players[player]
+        val budget = s.battle!!.budgets[player]
+        val hexes = Hex.disk(s.config.radius)
+        fun intel(h: Hex) = me.intel[h]?.takeIf { it.phase == s.phase }
+        if (budget.scouts > 0) return DuelMove.Scout(hexes[rng.nextInt(hexes.size)])
+        if (budget.shots > 0) {
+            // Sometimes goes for a building it has seen, otherwise anywhere it hasn't fired yet.
+            val seen = hexes.filter { intel(it)?.let { i -> i.occupied && i.shot == null } == true }
+            if (seen.isNotEmpty() && rng.nextInt(2) == 0) return DuelMove.Shoot(seen[rng.nextInt(seen.size)])
+            val open = hexes.filter { intel(it)?.shot == null }.ifEmpty { hexes }
+            return DuelMove.Shoot(open[rng.nextInt(open.size)])
+        }
+        return DuelMove.EndTurn
+    }
+}
+
+enum class BotLevel {
+    EASY, NORMAL, HARD;
+
+    /** A bot for one match; some remember things during it, so don't share one between matches. */
+    fun create(): DuelPlayer = when (this) {
+        EASY -> RookieBot
+        NORMAL -> EvolvedBot(EvolvedBot.NORMAL)
+        HARD -> EvolvedBot(EvolvedBot.HARD)
     }
 }

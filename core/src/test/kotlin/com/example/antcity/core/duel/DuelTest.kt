@@ -188,11 +188,14 @@ class DuelTest {
 
     @Test
     fun botsFinishMatches() {
-        repeat(30) { seed ->
+        val bots = listOf<() -> DuelPlayer>({ DuelBot }) + BotLevel.entries.map { it::create }
+        for (a in bots) for (b in bots) repeat(10) { seed ->
+            val players = listOf(a(), b())
             var s = Duel.start(DuelConfig(seed = seed.toLong()))
             var steps = 0
             while (s.stage != Stage.OVER) {
-                s = DuelBot.play(s, s.actor()!!)
+                val who = s.actor()!!
+                s = players[who].play(s, who)
                 assertTrue(++steps < 1000)
             }
             assertNotNull(s.outcome)

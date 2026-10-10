@@ -8,9 +8,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.antcity.core.duel.Duel
-import com.example.antcity.core.duel.DuelBot
+import com.example.antcity.core.duel.BotLevel
 import com.example.antcity.core.duel.DuelConfig
 import com.example.antcity.core.duel.DuelMove
+import com.example.antcity.core.duel.DuelPlayer
 import com.example.antcity.core.duel.DuelResult
 import com.example.antcity.core.duel.DuelState
 import com.example.antcity.core.duel.Extra
@@ -30,7 +31,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 /**
- * A duel: against [DuelBot], two people passing one phone, or against another phone over
+ * A duel: against a bot of some [BotLevel], two people passing one phone, or against another phone over
  * Bluetooth or Wi-Fi. In pass-and-play the screen is [covered] whenever the phone changes hands.
  */
 class DuelViewModel(app: Application) : AndroidViewModel(app) {
@@ -54,6 +55,10 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var mode by mutableStateOf(Mode.BOT)
         private set
+    var level by mutableStateOf(BotLevel.NORMAL)
+        private set
+    /** The bot for the current match. */
+    private var bot: DuelPlayer = level.create()
     /** The player whose screen is showing. */
     var viewer by mutableIntStateOf(0)
         private set
@@ -84,9 +89,11 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Local games ----------------------------------------------------------------------------
 
-    fun start(mode: Mode) {
+    fun start(mode: Mode, level: BotLevel = this.level) {
         require(mode != Mode.ONLINE)
         this.mode = mode
+        this.level = level
+        bot = level.create()
         begin(Duel.start(DuelConfig(seed = System.currentTimeMillis())), viewer = 0)
         covered = mode == Mode.PASS
     }
@@ -212,7 +219,7 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         track(s)
         if (mode == Mode.BOT) {
             while (s.actor() == 1) {
-                s = DuelBot.play(s, 1)
+                s = bot.play(s, 1)
                 track(s)
             }
         }

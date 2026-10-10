@@ -1,11 +1,18 @@
 package com.example.antcity.lab
 
+import com.example.antcity.core.duel.BotLevel
+import com.example.antcity.core.duel.DuelBot
 import com.example.antcity.core.duel.DuelBuilding
 import com.example.antcity.core.duel.DuelConfig
+import com.example.antcity.core.duel.DuelPlayer
 import com.example.antcity.core.duel.DuelRules
+import com.example.antcity.core.duel.EvolvedBot
+import com.example.antcity.core.duel.Genome
+import com.example.antcity.core.duel.RookieBot
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.Random
 import kotlin.math.abs
 import kotlin.system.exitProcess
@@ -51,6 +58,8 @@ private fun usage(): Nothing {
           evolve <variant>   evolve bots for one rule set and report
           sweep              evolve and report every variant (or --only a,b,c)
           variants           list the rule sets
+          levels             how the app's bot levels do against each other
+          hard               evolve a bot for the current rules and compare it with the levels
         options: --gens N (60) --pop N (32) --seeds N (2, per pair and generation)
                  --threads N (16) --eval-seeds N (200) --out DIR (lab-results/<time>) --seed N (1)
         """.trimIndent(),
@@ -94,7 +103,41 @@ fun main(args: Array<String>) {
                 Report(out).write(results) // keep partial results if the run is stopped
             }
         }
+        "levels" -> levels(DuelConfig(), settings, "simple" to { DuelBot })
+        "hard" -> {
+            val benchmarks = listOf({ DuelBot }, { RookieBot }, { EvolvedBot(EvolvedBot.NORMAL) }, { EvolvedBot(EvolvedBot.HARD) })
+            val result = runVariant("base", DuelConfig(), settings, benchmarks)
+            Report(out).write(listOf(result))
+            levels(DuelConfig(), settings, "evolved" to { EvolvedBot(result.best) })
+            log("genome for EvolvedBot.HARD:")
+            println("Genome(doubleArrayOf(" + result.best.w.joinToString(", ") { "%.3f".format(Locale.ROOT, it) } + "))")
+        }
         else -> usage()
+    }
+}
+
+/** Win rates (draws count half) of each bot level, and [extra] if given, against each other, from both seats. */
+fun levels(config: DuelConfig, st: Settings, extra: Pair<String, () -> DuelPlayer>? = null) {
+    val bots = BotLevel.entries.map { it.name.lowercase() to it::create } + listOfNotNull(extra)
+    val games = st.evalSeeds * 2
+    log("win rates over $games games per pair (row against column):")
+    println("%-10s".format("") + bots.joinToString("") { "%10s".format(it.first) })
+    for ((name, a) in bots) {
+        val row = bots.map { (_, b) ->
+            val tasks = List(games) { k ->
+                {
+                    val seat = k % 2
+                    val players = if (seat == 0) listOf(a(), b()) else listOf(b(), a())
+                    when (Arena.play(config, 9_000_000L + k, players)) {
+                        seat -> 1.0
+                        -1 -> 0.5
+                        else -> 0.0
+                    }
+                }
+            }
+            Arena.parallel(st.threads, tasks).average()
+        }
+        println("%-10s".format(name) + row.joinToString("") { "%9.0f%%".format(it * 100) })
     }
 }
 
@@ -116,10 +159,10 @@ class VariantResult(val name: String, val config: DuelConfig, val summary: Summa
     }
 }
 
-fun runVariant(name: String, config: DuelConfig, st: Settings): VariantResult {
+fun runVariant(name: String, config: DuelConfig, st: Settings, benchmarks: List<() -> DuelPlayer> = emptyList()): VariantResult {
     val started = System.currentTimeMillis()
     log("== $name: radius ${config.radius}, ${config.rules}")
-    val evo = Evolution(config, st.pop, st.seeds, st.threads, Random(st.seed))
+    val evo = Evolution(config, st.pop, st.seeds, st.threads, Random(st.seed), benchmarks)
     var last: List<Evolution.Scored> = emptyList()
     for (gen in 0 until st.gens) {
         // Mutation shrinks over time: explore first, then refine.

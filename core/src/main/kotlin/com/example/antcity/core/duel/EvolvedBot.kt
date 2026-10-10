@@ -1,15 +1,5 @@
-package com.example.antcity.lab
+package com.example.antcity.core.duel
 
-import com.example.antcity.core.duel.Building
-import com.example.antcity.core.duel.Duel
-import com.example.antcity.core.duel.DuelBuilding
-import com.example.antcity.core.duel.DuelMove
-import com.example.antcity.core.duel.DuelPlayer
-import com.example.antcity.core.duel.DuelState
-import com.example.antcity.core.duel.Extra
-import com.example.antcity.core.duel.Intel
-import com.example.antcity.core.duel.Shot
-import com.example.antcity.core.duel.Stage
 import com.example.antcity.core.hex.Hex
 import com.example.antcity.core.hex.SplitMix
 
@@ -40,9 +30,13 @@ enum class Gene(val init: Double) {
     SAVE(-1.0),
     // Where to scout.
     SCOUT_UNKNOWN(1.0), SCOUT_RING(0.0), SCOUT_STALE(0.0),
-    // Where to shoot (a known enemy hall always comes first).
+    // Where to shoot.
     SHOT_KNOWN(5.0), SHOT_DAMAGED(1.0), SHOT_UNKNOWN(0.0), SHOT_RING(0.0), SHOT_NEAR_KNOWN(0.0), SHOT_STALE(0.0),
-    /** Firing again at a tile already fired at blindly (result unknown). */
+    /** On top of [SHOT_KNOWN] for the enemy Town Hall. */
+    SHOT_HALL(10.0),
+    /** Per shot beyond what a known building should take to fall (its hit points as far as scouted). */
+    SHOT_OVERKILL(-6.0),
+    /** Per shot already fired this battle at a tile with no known building. */
     SHOT_REFIRE(-1.0);
 
     companion object {
@@ -56,16 +50,39 @@ class Genome(val w: DoubleArray) {
     override fun toString() = Gene.entries.joinToString(", ") { "${it.name}=${"%.2f".format(w[it.ordinal])}" }
 }
 
-/** A bot whose every choice is a weighted sum of what a player can see. */
+/**
+ * A bot whose every choice is a weighted sum of what a player can see, and of where it has fired
+ * this battle, which it remembers like a player would. Use one instance per match.
+ */
 class EvolvedBot(val genome: Genome) : DuelPlayer {
+
+    companion object {
+        /** The hand-set starting weights. */
+        val NORMAL = Genome(Gene.initial())
+
+        /** Evolved by the balance lab for the current rules (`lab hard`). */
+        val HARD = Genome(doubleArrayOf(2.410, 4.467, 1.250, 2.966, 0.404, -0.834, 0.246, -2.661, -1.864, 1.052, 1.611, -2.358, 0.456, 1.522, 3.234, 0.956, -2.948, 0.571, -2.222, -0.352, -2.733, 0.905, 7.937, 0.318, 0.085, -0.788, 2.237, 3.215, 15.067, -5.138, -0.306))
+    }
+
+    /** Shots fired per tile, for the battle in [firedPhase]. */
+    private val fired = List(Duel.PLAYERS) { mutableMapOf<Hex, Int>() }
+    private val firedPhase = IntArray(Duel.PLAYERS) { -1 }
 
     private fun rng(s: DuelState, player: Int): SplitMix {
         val b = s.battle?.budgets?.get(player)
         return SplitMix(s.config.seed * 977 + s.phase * 131 + s.round * 17 + player + ((b?.shots ?: 0) * 7 + (b?.scouts ?: 0) * 3) * 1_000_003L)
     }
 
-    override fun next(s: DuelState, player: Int): DuelMove =
-        if (s.stage == Stage.BUILD) build(s, player) else battle(s, player)
+    override fun next(s: DuelState, player: Int): DuelMove {
+        if (s.stage == Stage.BUILD) return build(s, player)
+        if (firedPhase[player] != s.phase) {
+            fired[player].clear()
+            firedPhase[player] = s.phase
+        }
+        val move = battle(s, player)
+        if (move is DuelMove.Shoot) fired[player].merge(move.hex, 1, Int::plus)
+        return move
+    }
 
     private fun ring(s: DuelState, h: Hex) = h.length.toDouble() / s.config.radius
 
@@ -129,6 +146,7 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
 
     private fun battle(s: DuelState, player: Int): DuelMove {
         val g = genome
+        val rules = s.config.rules
         val me = s.players[player]
         val budget = s.battle!!.budgets[player]
         val hexes = Hex.disk(s.config.radius)
@@ -136,12 +154,20 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
         fun noise() = rng.nextInt(1000) / 1e6
         fun fresh(h: Hex): Intel? = me.intel[h]?.takeIf { it.phase == s.phase }
         fun stale(h: Hex): Intel? = me.intel[h]?.takeIf { it.phase < s.phase }
-        fun alive(i: Intel?) = i != null && i.occupied && i.shot != Shot.DESTROYED
-        // Blindly fired at: still unknown.
-        fun unknown(h: Hex) = fresh(h).let { it == null || it.shot == Shot.FIRED }
-        val hallKnown = hexes.firstOrNull { fresh(it)?.type == DuelBuilding.TOWN_HALL && alive(fresh(it)) }
+        fun shots(h: Hex) = fired[player][h] ?: 0
+        /** A building is known to stand here; null if not, or if it's shown missed or destroyed. */
+        fun standing(h: Hex): Intel? = fresh(h)?.takeIf { it.occupied && it.shot != Shot.DESTROYED && it.shot != Shot.MISS }
+        /** Shots a known building should still take: its hit points as far as scouting shows, minus shots fired. */
+        fun left(h: Hex, i: Intel): Int {
+            val walls = minOf(h.neighbors().count { fresh(it)?.type == DuelBuilding.WALL }, rules.maxWallBonus)
+            return (i.type?.let(rules::hp) ?: rules.buildingHp) + walls - shots(h)
+        }
+        fun alive(h: Hex) = standing(h)?.let { left(h, it) > 0 } == true
+        // Fired at without a result: still unknown.
+        fun unknown(h: Hex) = fresh(h).let { it == null || it.shot == Shot.FIRED && !it.occupied }
+        val hallKnown = hexes.firstOrNull { standing(it)?.type == DuelBuilding.TOWN_HALL && alive(it) }
 
-        val canBuy = me.materials >= s.config.rules.extraActionCost
+        val canBuy = me.materials >= rules.extraActionCost
         val saving = g[Gene.SAVE] > 0 && !s.isLastPhase
         if (canBuy && !saving) {
             return DuelMove.Buy(if (g[Gene.BUY_SCOUT] > 0 && hallKnown == null) Extra.SCOUT else Extra.SHOT)
@@ -158,18 +184,20 @@ class EvolvedBot(val genome: Genome) : DuelPlayer {
             return DuelMove.Scout(target)
         }
         if (budget.shots > 0) {
-            if (hallKnown != null) return DuelMove.Shoot(hallKnown)
             val target = hexes.maxBy { h ->
                 val f = fresh(h)
+                val known = standing(h)
                 when {
-                    f != null && f.shot != Shot.FIRED && !alive(f) -> Double.NEGATIVE_INFINITY // known empty, missed or destroyed
-                    f != null && f.shot != Shot.FIRED -> g[Gene.SHOT_KNOWN] + (if (f.shot == Shot.HIT) g[Gene.SHOT_DAMAGED] else 0.0)
-                    // Fired at already (result unknown), but scouting showed a building there.
-                    f != null && f.occupied -> g[Gene.SHOT_KNOWN] + g[Gene.SHOT_REFIRE]
+                    known != null -> g[Gene.SHOT_KNOWN] +
+                        (if (known.type == DuelBuilding.TOWN_HALL) g[Gene.SHOT_HALL] else 0.0) +
+                        (if (known.shot == Shot.HIT) g[Gene.SHOT_DAMAGED] else 0.0) +
+                        g[Gene.SHOT_OVERKILL] * (1 - left(h, known)).coerceAtLeast(0)
+                    // Known empty, missed or destroyed.
+                    f != null && f.shot != Shot.FIRED -> Double.NEGATIVE_INFINITY
                     else -> g[Gene.SHOT_UNKNOWN] +
-                        (if (f?.shot == Shot.FIRED) g[Gene.SHOT_REFIRE] else 0.0) +
+                        g[Gene.SHOT_REFIRE] * shots(h) +
                         g[Gene.SHOT_RING] * ring(s, h) +
-                        g[Gene.SHOT_NEAR_KNOWN] * h.neighbors().count { alive(fresh(it)) } +
+                        g[Gene.SHOT_NEAR_KNOWN] * h.neighbors().count(::alive) +
                         g[Gene.SHOT_STALE] * (if (stale(h)?.occupied == true) 1 else 0)
                 } + noise()
             }

@@ -1,6 +1,7 @@
 package com.example.antcity.lab
 
 import com.example.antcity.core.duel.DuelBuilding
+import com.example.antcity.core.duel.Gene
 import java.io.File
 
 /** Writes a Markdown comparison of variants, plus the best genome of each. */

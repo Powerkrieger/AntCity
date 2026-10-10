@@ -2,6 +2,9 @@ package com.example.antcity.lab
 
 import com.example.antcity.core.duel.DuelBot
 import com.example.antcity.core.duel.DuelConfig
+import com.example.antcity.core.duel.EvolvedBot
+import com.example.antcity.core.duel.Gene
+import com.example.antcity.core.duel.Genome
 import java.util.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.antcity.DuelViewModel
 import com.example.antcity.core.duel.Board
+import com.example.antcity.core.duel.BotLevel
 import com.example.antcity.core.duel.Building
 import com.example.antcity.core.duel.Duel
 import com.example.antcity.core.duel.DuelBuilding
@@ -103,6 +104,12 @@ private val GOLD = Color(0xFFFFB300)
 private const val SHOTS = "icon.attack"
 private const val SCOUTS = "icon.recon"
 private const val MATERIALS = "icon.materials"
+
+private fun BotLevel.label() = when (this) {
+    BotLevel.EASY -> "Easy"
+    BotLevel.NORMAL -> "Normal"
+    BotLevel.HARD -> "Hard"
+}
 
 private fun DuelBuilding.label() = when (this) {
     DuelBuilding.TOWN_HALL -> "Town Hall"
@@ -180,13 +187,13 @@ fun DuelScreen(onClose: () -> Unit, vm: DuelViewModel = viewModel()) {
 
 /** How each player is called on this device. */
 private fun names(vm: DuelViewModel): List<String> = when (vm.mode) {
-    DuelViewModel.Mode.BOT -> listOf("You", "The bot")
+    DuelViewModel.Mode.BOT -> listOf("You", "${vm.level.label()} bot")
     DuelViewModel.Mode.PASS -> listOf("Player 1", "Player 2")
     DuelViewModel.Mode.ONLINE -> List(Duel.PLAYERS) { if (it == vm.viewer) "You" else vm.opponent ?: "Opponent" }
 }
 
 @Composable
-private fun DuelMenu(onClose: () -> Unit, start: (DuelViewModel.Mode) -> Unit, nearby: () -> Unit) {
+private fun DuelMenu(onClose: () -> Unit, start: (DuelViewModel.Mode, BotLevel) -> Unit, nearby: () -> Unit) {
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
@@ -195,8 +202,13 @@ private fun DuelMenu(onClose: () -> Unit, start: (DuelViewModel.Mode) -> Unit, n
         SpriteIcon(DuelBuilding.TOWN_HALL.spriteKey, "🏛️", 120.dp)
         Text("Duel", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Button(onClick = nearby, Modifier.fillMaxWidth().height(64.dp)) { Text("Two phones, nearby", fontSize = 18.sp) }
-        Button(onClick = { start(DuelViewModel.Mode.PASS) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Two players, one phone", fontSize = 18.sp) }
-        Button(onClick = { start(DuelViewModel.Mode.BOT) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Against the bot", fontSize = 18.sp) }
+        Button(onClick = { start(DuelViewModel.Mode.PASS, BotLevel.NORMAL) }, Modifier.fillMaxWidth().height(64.dp)) { Text("Two players, one phone", fontSize = 18.sp) }
+        Text("Against the bot", style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BotLevel.entries.forEach { level ->
+                Button(onClick = { start(DuelViewModel.Mode.BOT, level) }, Modifier.weight(1f).height(64.dp)) { Text(level.label(), fontSize = 18.sp) }
+            }
+        }
         TextButton(onClick = onClose) { Text("Back") }
     }
 }
@@ -682,7 +694,7 @@ private fun ReportDialog(r: DuelViewModel.Report, names: List<String>, onDismiss
                         Text(names[i], Modifier.weight(1f))
                         Column(horizontalAlignment = Alignment.End) {
                             Text("${r.damage[i]} damage dealt", fontWeight = FontWeight.Bold)
-                            Text("${r.destroyed[i]} buildings destroyed", style = MaterialTheme.typography.bodySmall)
+                            Text(if (r.destroyed[i] == 1) "1 building destroyed" else "${r.destroyed[i]} buildings destroyed", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

@@ -2,12 +2,17 @@ package com.example.antcity.lab
 
 import com.example.antcity.core.duel.DuelBot
 import com.example.antcity.core.duel.DuelConfig
+import com.example.antcity.core.duel.DuelPlayer
+import com.example.antcity.core.duel.EvolvedBot
+import com.example.antcity.core.duel.Gene
+import com.example.antcity.core.duel.Genome
 import java.util.Random
 
 /**
  * Evolves [EvolvedBot]s by self-play: every generation plays a round robin (both seats, shared
  * seeds), the best quarter survives unchanged, and the rest are replaced by mutated crossovers of
- * the better half.
+ * the better half. With [benchmarks], each genome also plays those fixed bots, and both scores count
+ * equally, so it can't just learn to beat its own population.
  */
 class Evolution(
     private val config: DuelConfig,
@@ -15,6 +20,7 @@ class Evolution(
     private val seedsPerPair: Int,
     private val threads: Int,
     private val random: Random,
+    private val benchmarks: List<() -> DuelPlayer> = emptyList(),
 ) {
     class Scored(val genome: Genome, val fitness: Double)
 
@@ -56,7 +62,20 @@ class Evolution(
                 else -> { points[i] += 0.5; points[j] += 0.5 }
             }
         }
-        return genomes.indices.map { Scored(genomes[it], points[it] / games[it]) }
+        if (benchmarks.isEmpty()) return genomes.indices.map { Scored(genomes[it], points[it] / games[it]) }
+        val bench = Arena.parallel(threads, buildList {
+            for (i in genomes.indices) for (b in benchmarks) for (seed in seeds) for (seat in 0..1) {
+                add {
+                    val players = if (seat == 0) listOf(EvolvedBot(genomes[i]), b()) else listOf(b(), EvolvedBot(genomes[i]))
+                    i to when (Arena.play(config, seed, players)) {
+                        seat -> 1.0
+                        -1 -> 0.5
+                        else -> 0.0
+                    }
+                }
+            }
+        }).groupBy({ it.first }, { it.second })
+        return genomes.indices.map { Scored(genomes[it], (points[it] / games[it] + bench.getValue(it).average()) / 2) }
     }
 
     /** Win rate (draws count half) of [g] against the simple [DuelBot], over [games] games in both seats. */
