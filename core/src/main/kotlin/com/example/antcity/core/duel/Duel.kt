@@ -11,21 +11,21 @@ import com.example.antcity.core.hex.SplitMix
  * ending in a battle. Everything is integer math and seeded randomness, so two devices running the
  * same moves reach the same state.
  */
-enum class DuelBuilding(val hp: Int, val offered: Boolean = true) {
+enum class DuelBuilding(val offered: Boolean = true) {
     /** Lose it and you lose. Gives a shot and some materials. */
-    TOWN_HALL(4, offered = false),
+    TOWN_HALL(offered = false),
     /** Workers: boost adjacent barracks and quarries. */
-    HOUSE(1),
+    HOUSE,
     /** A shot, two with a house next to it to recruit from. */
-    BARRACKS(1),
+    BARRACKS,
     /** A shot, plus one per barracks next to it (crews). */
-    ARTILLERY(1),
+    ARTILLERY,
     /** One scout. */
-    TOWER(1),
+    TOWER,
     /** Materials, more with houses next to it. */
-    QUARRY(1),
+    QUARRY,
     /** Sturdy, and makes its neighbours sturdier. */
-    WALL(2);
+    WALL;
 
     companion object {
         val OFFERABLE = entries.filter { it.offered }
@@ -51,42 +51,58 @@ data class Board(val radius: Int, val buildings: List<Building> = emptyList()) {
     fun replace(b: Building) = copy(buildings = buildings.map { if (it.hex == b.hex) b else it })
 }
 
-/** All tuning lives here. */
-object DuelRules {
+/** All tuning lives here. The defaults are the current game; the lab tries variants. */
+data class DuelRules(
+    val hallHp: Int = 4,
+    val wallHp: Int = 2,
+    /** Hit points of every other building. */
+    val buildingHp: Int = 1,
+    val hallShots: Int = 1,
+    val hallMaterials: Int = 1,
+    val barracksShots: Int = 1,
+    val artilleryShots: Int = 1,
+    val towerScouts: Int = 1,
+    val quarryMaterials: Int = 1,
+    /** Houses next to a barracks or quarry that each add one, at most. */
+    val maxHouseBonus: Int = 1,
+    /** Barracks next to an artillery that each add a shot, at most. */
+    val maxCrews: Int = 2,
+    /** Walls next to a building that each add a hit point, at most. */
+    val maxWallBonus: Int = 2,
     /** Materials for one extra shot or scout. */
-    const val EXTRA_ACTION_COST = 2
-    /** Most hit points a building can get from walls next to it. */
-    const val MAX_WALL_BONUS = 2
-    /** Most bonus a building can get from houses next to it. */
-    const val MAX_HOUSE_BONUS = 1
-    /** Most barracks an artillery can take crews from. */
-    const val MAX_CREWS = 2
+    val extraActionCost: Int = 2,
+) {
+    fun hp(type: DuelBuilding) = when (type) {
+        DuelBuilding.TOWN_HALL -> hallHp
+        DuelBuilding.WALL -> wallHp
+        else -> buildingHp
+    }
 
     private fun Board.adjacent(hex: Hex, type: DuelBuilding) = hex.neighbors().count { get(it)?.type == type }
 
     fun yieldOf(board: Board, b: Building): Yield {
-        val houses = minOf(board.adjacent(b.hex, DuelBuilding.HOUSE), MAX_HOUSE_BONUS)
+        val houses = minOf(board.adjacent(b.hex, DuelBuilding.HOUSE), maxHouseBonus)
         return when (b.type) {
-            DuelBuilding.TOWN_HALL -> Yield(shots = 1, materials = 1)
-            DuelBuilding.BARRACKS -> Yield(shots = 1 + houses)
-            DuelBuilding.ARTILLERY -> Yield(shots = 1 + minOf(board.adjacent(b.hex, DuelBuilding.BARRACKS), MAX_CREWS))
-            DuelBuilding.TOWER -> Yield(scouts = 1)
-            DuelBuilding.QUARRY -> Yield(materials = 1 + houses)
+            DuelBuilding.TOWN_HALL -> Yield(shots = hallShots, materials = hallMaterials)
+            DuelBuilding.BARRACKS -> Yield(shots = barracksShots + houses)
+            DuelBuilding.ARTILLERY -> Yield(shots = artilleryShots + minOf(board.adjacent(b.hex, DuelBuilding.BARRACKS), maxCrews))
+            DuelBuilding.TOWER -> Yield(scouts = towerScouts)
+            DuelBuilding.QUARRY -> Yield(materials = quarryMaterials + houses)
             DuelBuilding.HOUSE, DuelBuilding.WALL -> Yield()
         }
     }
 
     fun production(board: Board) = board.buildings.fold(Yield()) { acc, b -> acc + yieldOf(board, b) }
 
-    fun maxHp(board: Board, b: Building) = b.type.hp + minOf(board.adjacent(b.hex, DuelBuilding.WALL), MAX_WALL_BONUS)
+    fun maxHp(board: Board, b: Building) = hp(b.type) + minOf(board.adjacent(b.hex, DuelBuilding.WALL), maxWallBonus)
 
     /**
-     * One number for "how good is this town", used for placement hints and by the bot. A scout is
-     * worth 3, a shot 2, a material or an extra hit point from walls 1.
+     * One number for "how good is this town", used for placement hints and by the simple bot. A
+     * scout is worth 3, a shot 2, a material or an extra hit point from walls 1.
      */
     fun value(board: Board): Int {
         val y = production(board)
-        return 2 * y.shots + 3 * y.scouts + y.materials + board.buildings.sumOf { maxHp(board, it) - it.type.hp }
+        return 2 * y.shots + 3 * y.scouts + y.materials + board.buildings.sumOf { maxHp(board, it) - hp(it.type) }
     }
 
     /** How much placing [type] at [hex] would add to [value]. */
@@ -100,6 +116,7 @@ data class DuelConfig(
     /** Buildings offered each round; 1 means everyone just places the building they're given. */
     val offers: Int = 3,
     val seed: Long = 1,
+    val rules: DuelRules = DuelRules(),
 )
 
 enum class Shot { MISS, HIT, DESTROYED }
@@ -198,7 +215,7 @@ object Duel {
     }
 
     private fun startBattle(s: DuelState): DuelState {
-        val yields = s.players.map { DuelRules.production(it.board) }
+        val yields = s.players.map { s.config.rules.production(it.board) }
         // Who shoots first alternates between phases. Budgets are fixed now, so order doesn't change them.
         val order = if (s.phase % 2 == 0) listOf(0, 1) else listOf(1, 0)
         return s.copy(
@@ -245,8 +262,8 @@ object Duel {
         val b = enemy[hex]
         val (board, intel, kills) = when {
             b == null -> Triple(enemy, Intel(false, shot = Shot.MISS, phase = s.phase), 0)
-            b.damage + 1 >= DuelRules.maxHp(enemy, b) -> {
-                val (after, destroyed) = destroy(enemy, hex)
+            b.damage + 1 >= s.config.rules.maxHp(enemy, b) -> {
+                val (after, destroyed) = destroy(s.config.rules, enemy, hex)
                 Triple(after, Intel(true, b.type, Shot.DESTROYED, s.phase), destroyed)
             }
             else -> Triple(enemy.replace(b.copy(damage = b.damage + 1)), Intel(true, b.type, Shot.HIT, s.phase), 0)
@@ -262,14 +279,14 @@ object Duel {
      * Removes the building at [hex]. Losing a wall can drop a damaged neighbour's hit points to its
      * damage, which collapses it too. Returns the board and how many buildings fell.
      */
-    internal fun destroy(board: Board, hex: Hex): Pair<Board, Int> {
+    internal fun destroy(rules: DuelRules, board: Board, hex: Hex): Pair<Board, Int> {
         var after = board.without(hex)
         var count = 1
         if (board[hex]?.type == DuelBuilding.WALL) {
             for (n in hex.neighbors()) {
                 val b = after[n] ?: continue
-                if (b.damage >= DuelRules.maxHp(after, b)) {
-                    val (next, more) = destroy(after, n)
+                if (b.damage >= rules.maxHp(after, b)) {
+                    val (next, more) = destroy(rules, after, n)
                     after = next
                     count += more
                 }
@@ -282,13 +299,14 @@ object Duel {
     fun buy(s: DuelState, player: Int, extra: Extra): DuelResult {
         attackerCheck(s, player)?.let { return DuelResult.Rejected(it) }
         val me = s.players[player]
-        if (me.materials < DuelRules.EXTRA_ACTION_COST) return DuelResult.Rejected("Not enough materials")
+        val cost = s.config.rules.extraActionCost
+        if (me.materials < cost) return DuelResult.Rejected("Not enough materials")
         val budget = s.battle!!.budgets[player]
         val more = when (extra) {
             Extra.SHOT -> budget.copy(shots = budget.shots + 1)
             Extra.SCOUT -> budget.copy(scouts = budget.scouts + 1)
         }
-        return DuelResult.Ok(s.withPlayer(player, me.copy(materials = me.materials - DuelRules.EXTRA_ACTION_COST)).withBudget(player, more))
+        return DuelResult.Ok(s.withPlayer(player, me.copy(materials = me.materials - cost)).withBudget(player, more))
     }
 
     /** Ends [player]'s battle turn; unused shots and scouts are lost, materials are kept. */

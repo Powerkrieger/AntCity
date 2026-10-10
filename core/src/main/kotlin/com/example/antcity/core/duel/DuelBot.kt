@@ -52,7 +52,7 @@ object DuelBot : DuelPlayer {
             if (type == DuelBuilding.TOWN_HALL) return@forEachIndexed
             for (hex in free) {
                 // A little noise so it doesn't always build the same town.
-                val score = DuelRules.gain(board, type, hex) * 4 + rng.nextInt(4)
+                val score = s.config.rules.gain(board, type, hex) * 4 + rng.nextInt(4)
                 if (score > best.third) best = Triple(i, hex, score)
             }
         }
@@ -63,7 +63,7 @@ object DuelBot : DuelPlayer {
         val rng = rng(s, player)
         val me = s.players[player]
         val budget = s.battle!!.budgets[player]
-        if (me.materials >= DuelRules.EXTRA_ACTION_COST) return DuelMove.Buy(Extra.SHOT)
+        if (me.materials >= s.config.rules.extraActionCost) return DuelMove.Buy(Extra.SHOT)
 
         val hexes = Hex.disk(s.config.radius)
         fun intel(h: Hex) = me.intel[h]?.takeIf { it.phase == s.phase }

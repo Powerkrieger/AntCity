@@ -361,7 +361,7 @@ private fun BuildView(s: DuelState, vm: DuelViewModel) {
         if (type == null) emptyMap()
         else {
             // Scaled from the worst free tile to the best, so equal tiles all get the same light tint.
-            val gains = me.board.freeHexes.associateWith { DuelRules.gain(me.board, type, it) }
+            val gains = me.board.freeHexes.associateWith { s.config.rules.gain(me.board, type, it) }
             val min = gains.values.minOrNull() ?: 0
             val range = (gains.values.maxOrNull() ?: 0) - min
             gains.mapValues { if (range > 0) (it.value - min).toFloat() / range else 0f }
@@ -372,7 +372,7 @@ private fun BuildView(s: DuelState, vm: DuelViewModel) {
     if (type != null && ghost != null) cells[ghost] = Cell(building = type, ghost = true)
 
     Column(Modifier.fillMaxSize()) {
-        YieldPills(DuelRules.production(preview), DuelRules.production(me.board))
+        YieldPills(s.config.rules.production(preview), s.config.rules.production(me.board))
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
             DuelBoard(s.config.radius, cells, highlight = null, invalid = vm.invalid, onTap = vm::tapOwn)
         }
@@ -465,7 +465,7 @@ private fun BattleView(s: DuelState, vm: DuelViewModel) {
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Materials buy one more of the selected action.
-                val canBuy = me.materials >= DuelRules.EXTRA_ACTION_COST && !vm.showOwn
+                val canBuy = me.materials >= s.config.rules.extraActionCost && !vm.showOwn
                 OutlinedButton(onClick = { vm.buy(vm.action) }, enabled = canBuy, modifier = Modifier.weight(1f).height(52.dp)) {
                     SpriteIcon(MATERIALS, "⛏️", 22.dp)
                     Text(" ${me.materials}  →  +1 ", fontWeight = FontWeight.Bold)

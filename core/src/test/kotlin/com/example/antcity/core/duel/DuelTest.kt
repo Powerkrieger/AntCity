@@ -55,15 +55,15 @@ class DuelTest {
     @Test
     fun housesBoostNeighboursAndWallsAddHp() {
         val board = Board(2, listOf(Building(DuelBuilding.BARRACKS, o), Building(DuelBuilding.HOUSE, Hex(1, 0)), Building(DuelBuilding.HOUSE, Hex(-1, 0)), Building(DuelBuilding.HOUSE, Hex(0, 1))))
-        assertEquals(1 + DuelRules.MAX_HOUSE_BONUS, DuelRules.yieldOf(board, board[o]!!).shots)
+        assertEquals(1 + DuelRules().maxHouseBonus, DuelRules().yieldOf(board, board[o]!!).shots)
         val walled = Board(2, listOf(Building(DuelBuilding.HOUSE, o), Building(DuelBuilding.WALL, Hex(1, 0))))
-        assertEquals(2, DuelRules.maxHp(walled, walled[o]!!))
+        assertEquals(2, DuelRules().maxHp(walled, walled[o]!!))
     }
 
     @Test
     fun losingAWallCollapsesDamagedNeighbours() {
         val board = Board(2, listOf(Building(DuelBuilding.WALL, o), Building(DuelBuilding.HOUSE, Hex(1, 0), damage = 1), Building(DuelBuilding.HOUSE, Hex(-1, 0))))
-        val (after, count) = Duel.destroy(board, o)
+        val (after, count) = Duel.destroy(DuelRules(), board, o)
         assertEquals(2, count)
         assertNull(after[Hex(1, 0)])
         assertNotNull(after[Hex(-1, 0)])
@@ -87,7 +87,7 @@ class DuelTest {
         assertIs<DuelResult.Rejected>(Duel.shoot(s, 1, o))
 
         // Materials for a scout and enough shots to bring the hall down.
-        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules.EXTRA_ACTION_COST * 7) else p })
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 7) else p })
         s = Duel.buy(s, 0, Extra.SCOUT).ok()
         repeat(6) { s = Duel.buy(s, 0, Extra.SHOT).ok() }
 
