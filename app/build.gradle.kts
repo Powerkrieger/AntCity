@@ -16,8 +16,8 @@ android {
         applicationId = "de.powerizzle.antcity"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.2.3"
+        versionCode = 6
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -54,6 +54,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":powerlink"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

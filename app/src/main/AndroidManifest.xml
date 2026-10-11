@@ -4,17 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Local duels over Bluetooth (platform API only). -->
-    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- Before Android 12, finding nearby devices counts as location access. -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="s" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <!-- Local duels: the Wi-Fi, Bluetooth and Wi-Fi Direct permissions come from the PowerLink module. -->
 
     <application
         android:allowBackup="true"

@@ -1,0 +1,3 @@
+[submodule "powerlink"]
+	path = powerlink
+	url = https://github.com/Powerkrieger/PowerLink.git

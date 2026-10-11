@@ -7,19 +7,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Animatable
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.input.KeyboardType
-import com.example.antcity.net.BluetoothTransport
+import de.powerizzle.powerlink.ui.HostPanel
+import de.powerizzle.powerlink.ui.JoinPanel
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -774,46 +769,8 @@ private fun Waiting(text: String) {
 
 @Composable
 private fun LobbyScreen(vm: DuelViewModel, lobby: DuelViewModel.Lobby) {
-    val bt = vm.bluetooth
-    // What to do once Bluetooth is allowed and on.
-    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
-    fun runPending() {
-        pending?.invoke()
-        pending = null
-    }
-    val enable = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (bt.enabled) runPending() else {
-            vm.message = "Bluetooth is off"
-            pending = null
-        }
-    }
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-        when {
-            !granted.values.all { it } -> {
-                vm.message = "Bluetooth permission is needed"
-                pending = null
-            }
-            bt.enabled -> runPending()
-            else -> enable.launch(BluetoothTransport.enableIntent())
-        }
-    }
-    // Hosting goes on whether or not the player allows being discoverable: paired phones still connect.
-    val discoverable = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-    fun withBluetooth(then: () -> Unit) {
-        if (!bt.available) {
-            vm.message = "This device has no Bluetooth"
-            return
-        }
-        pending = then
-        when {
-            !bt.hasPermissions -> permissions.launch(BluetoothTransport.permissions.toTypedArray())
-            !bt.enabled -> enable.launch(BluetoothTransport.enableIntent())
-            else -> runPending()
-        }
-    }
-
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp),
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -821,75 +778,29 @@ private fun LobbyScreen(vm: DuelViewModel, lobby: DuelViewModel.Lobby) {
         Text("Two phones", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         when (lobby) {
             DuelViewModel.Lobby.Choose -> {
-                Text("One phone hosts, the other joins.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LobbySection("Bluetooth") {
-                    Button(
-                        onClick = {
-                            withBluetooth {
-                                discoverable.launch(BluetoothTransport.discoverableIntent())
-                                vm.host(DuelViewModel.Transport.BLUETOOTH)
-                            }
-                        },
-                        Modifier.weight(1f).height(56.dp),
-                    ) { Text("Host") }
-                    Button(onClick = { withBluetooth(vm::browse) }, Modifier.weight(1f).height(56.dp)) { Text("Join") }
+                Text(
+                    "One phone hosts, the other joins. Works over Wi-Fi, a hotspot, Bluetooth or Wi-Fi Direct.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LobbySection("Play against a friend") {
+                    Button(onClick = vm::host, Modifier.weight(1f).height(56.dp)) { Text("Host") }
+                    Button(onClick = vm::join, Modifier.weight(1f).height(56.dp)) { Text("Join") }
                 }
-                LobbySection("Same Wi-Fi") {
-                    OutlinedButton(onClick = { vm.host(DuelViewModel.Transport.WIFI) }, Modifier.weight(1f).height(56.dp)) { Text("Host") }
-                    OutlinedButton(onClick = vm::enterAddress, Modifier.weight(1f).height(56.dp)) { Text("Join") }
-                }
-                Spacer(Modifier.weight(1f))
                 TextButton(onClick = vm::closeLobby) { Text("Back") }
             }
             is DuelViewModel.Lobby.Hosting -> {
-                Spacer(Modifier.height(32.dp))
-                CircularProgressIndicator(Modifier.size(56.dp))
-                Text("Waiting for the other phone…", style = MaterialTheme.typography.titleMedium)
-                val hint = when (lobby.transport) {
-                    DuelViewModel.Transport.BLUETOOTH -> "On the other phone, tap Join under Bluetooth and pick"
-                    DuelViewModel.Transport.WIFI -> "On the other phone, tap Join under Same Wi-Fi and enter"
-                }
-                Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                lobby.addresses.ifEmpty { listOf("(no network)") }.forEach { Text(it, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
-            }
-            is DuelViewModel.Lobby.Browsing -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("Pick the host. Searching for more…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Waiting for the other phone to join…", style = MaterialTheme.typography.titleMedium)
                 }
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    lobby.peers.sortedByDescending { it.paired }.forEach { peer ->
-                        Card(onClick = { vm.join(peer) }, Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text(peer.name, fontWeight = FontWeight.Bold)
-                                Text(if (peer.paired) "Paired" else peer.address, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
+                HostPanel(vm.powerLink, lobby.host, Modifier.fillMaxWidth())
                 TextButton(onClick = vm::backInLobby) { Text("Cancel") }
             }
-            DuelViewModel.Lobby.EnterAddress -> {
-                var address by rememberSaveable { mutableStateOf("") }
-                Text("Enter the address shown on the host", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(
-                    address, { address = it.filter { c -> c.isDigit() || c == '.' } },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(onClick = { vm.joinWifi(address) }, enabled = address.count { it == '.' } == 3, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Join") }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = vm::backInLobby) { Text("Cancel") }
-            }
-            is DuelViewModel.Lobby.Connecting -> {
-                Spacer(Modifier.height(32.dp))
-                CircularProgressIndicator(Modifier.size(56.dp))
-                Text("Connecting to ${lobby.name}…", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
+            DuelViewModel.Lobby.Joining -> {
+                Card(Modifier.fillMaxWidth()) {
+                    JoinPanel(vm.powerLink, onJoined = { link, _ -> vm.joined(link) }, Modifier.padding(16.dp))
+                }
                 TextButton(onClick = vm::backInLobby) { Text("Cancel") }
             }
         }

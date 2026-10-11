@@ -11,6 +11,10 @@ which verifies that everything you have could legitimately have been built.
 | `core/`   | Pure Kotlin: game rules, deterministic simulation, battles, API types        |
 | `server/` | Ktor + SQLite backend (Docker + Caddy, like GasTrack's)                       |
 | `app/`    | Jetpack Compose client                                                       |
+| `powerlink/` | Git submodule: [PowerLink](https://github.com/Powerkrieger/PowerLink), local multiplayer shared with the other games |
+
+Clone with `git clone --recursive` (or `git submodule update --init` afterwards); the app needs `powerlink/`.
+Connection fixes go into PowerLink, then `git submodule update --remote powerlink` here.
 
 Art lives in `app/src/main/assets/sprites/` and is looked up by key; see [`art/README.md`](art/README.md).
 
@@ -18,7 +22,8 @@ The app and server both run **the same `core` code**. That shared code makes the
 
 ## Duel (offline prototype)
 
-1v1 on two hidden hex grids, against the bot or two players on one phone (`core/.../duel/`).
+1v1 on two hidden hex grids, against the bot, two players on one phone, or two phones nearby
+over Wi-Fi/hotspot, Bluetooth or Wi-Fi Direct via PowerLink (`core/.../duel/`).
 3 phases of 5 build rounds; each round both players pick one of the same 3 buildings and place it.
 The Town Hall can go anywhere, but must be placed in the first phase. After each phase comes a
 Battleship-style battle: scouts reveal a tile and whether its neighbours are built on, shots hit one

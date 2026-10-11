@@ -56,7 +56,7 @@ sealed class NetMessage {
 
     companion object {
         /** Bumped whenever the rules or messages change, so mismatched versions don't play. */
-        const val PROTOCOL = 3
+        const val PROTOCOL = 4
 
         private val json = Json { ignoreUnknownKeys = true }
         fun decode(line: String): NetMessage = json.decodeFromString(serializer(), line)

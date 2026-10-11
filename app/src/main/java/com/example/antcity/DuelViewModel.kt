@@ -1,6 +1,7 @@
 package com.example.antcity
 
 import android.app.Application
+import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,30 +23,26 @@ import com.example.antcity.core.duel.Stage
 import com.example.antcity.core.duel.actor
 import com.example.antcity.core.duel.play
 import com.example.antcity.core.hex.Hex
-import com.example.antcity.net.BluetoothTransport
-import com.example.antcity.net.Link
-import com.example.antcity.net.WifiTransport
-import kotlinx.coroutines.CancellationException
+import com.example.antcity.net.LINK_CONFIG
+import de.powerizzle.powerlink.Link
+import de.powerizzle.powerlink.PowerLink
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 /**
  * A duel: against a bot of some [BotLevel], two people passing one phone, or against another phone over
- * Bluetooth or Wi-Fi. In pass-and-play the screen is [covered] whenever the phone changes hands.
+ * Wi-Fi, Bluetooth or Wi-Fi Direct (via PowerLink). In pass-and-play the screen is [covered] whenever the phone changes hands.
  */
 class DuelViewModel(app: Application) : AndroidViewModel(app) {
 
     enum class Mode { BOT, PASS, ONLINE }
-    enum class Transport { BLUETOOTH, WIFI }
 
     sealed class Lobby {
         data object Choose : Lobby()
-        /** Waiting for a guest; [addresses] tell the guest where to find this device. */
-        data class Hosting(val transport: Transport, val addresses: List<String>) : Lobby()
-        data class Browsing(val peers: List<BluetoothTransport.Peer>) : Lobby()
-        data object EnterAddress : Lobby()
-        data class Connecting(val name: String) : Lobby()
+        /** Waiting for a guest on every medium PowerLink offers. */
+        data class Hosting(val host: PowerLink.LinkHost) : Lobby()
+        data object Joining : Lobby()
     }
 
     /** What each player did to the other's town in the battle that just ended. */
@@ -262,7 +259,8 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Online ---------------------------------------------------------------------------------
 
-    val bluetooth = BluetoothTransport(app)
+    /** Local multiplayer over Wi-Fi, Bluetooth and Wi-Fi Direct (shared PowerLink module). */
+    val powerLink = PowerLink(app, LINK_CONFIG)
     var lobby by mutableStateOf<Lobby?>(null)
         private set
     var opponent by mutableStateOf<String?>(null)
@@ -273,75 +271,69 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     private var link: Link? = null
+    /** Kept open during a hosted match: closing it would also end a Wi-Fi Direct group. */
+    private var linkHost: PowerLink.LinkHost? = null
     private var net: NetDuel? = null
     private var lobbyJob: Job? = null
     private var linkJob: Job? = null
     /** Outgoing messages, sent one at a time so they can't overtake each other. */
     private var outbox = Channel<NetMessage>(Channel.UNLIMITED)
 
+    private val myName: String
+        get() = runCatching { powerLink.bluetoothName }.getOrNull()?.takeIf { it.isNotBlank() } ?: Build.MODEL
+
     fun openLobby() {
         lobby = Lobby.Choose
     }
 
     fun closeLobby() {
-        lobbyJob?.cancel()
+        stopLobby()
         lobby = null
     }
 
     fun backInLobby() {
-        lobbyJob?.cancel()
+        stopLobby()
         lobby = Lobby.Choose
     }
 
-    fun host(transport: Transport) {
+    private fun stopLobby() {
         lobbyJob?.cancel()
-        lobby = Lobby.Hosting(transport, if (transport == Transport.WIFI) WifiTransport.addresses() else listOf(bluetooth.name))
-        lobbyJob = viewModelScope.launch {
-            connect(host = true) { if (transport == Transport.BLUETOOTH) bluetooth.host() else WifiTransport.host() }
+        if (link == null) {
+            linkHost?.close()
+            linkHost = null
         }
     }
 
-    /** Lists paired devices and scans for more. */
-    fun browse() {
-        lobbyJob?.cancel()
-        lobby = Lobby.Browsing(bluetooth.paired())
+    /** Hosts on every medium at once; the first phone that connects is the opponent. */
+    fun host() {
+        stopLobby()
+        val h = powerLink.host(myName)
+        h.update("waiting", open = true)
+        linkHost = h
+        lobby = Lobby.Hosting(h)
         lobbyJob = viewModelScope.launch {
-            runCatching {
-                bluetooth.discover().collect { peer ->
-                    val l = lobby as? Lobby.Browsing ?: return@collect
-                    if (l.peers.none { it.address == peer.address }) lobby = l.copy(peers = l.peers + peer)
+            h.guests.collect { guest ->
+                if (link != null) {
+                    guest.close() // a duel has two players
+                } else {
+                    h.update("playing", open = false)
+                    connect(host = true, guest)
                 }
-            }.onFailure { if (it is CancellationException) throw it else message = "Can't scan: ${it.message}" }
+            }
         }
     }
 
-    fun join(peer: BluetoothTransport.Peer) {
-        lobbyJob?.cancel()
-        lobby = Lobby.Connecting(peer.name)
-        lobbyJob = viewModelScope.launch { connect(host = false) { bluetooth.join(peer) } }
+    fun join() {
+        stopLobby()
+        lobby = Lobby.Joining
     }
 
-    fun enterAddress() {
-        lobbyJob?.cancel()
-        lobby = Lobby.EnterAddress
+    /** Called by the join panel once it reached a host. */
+    fun joined(l: Link) {
+        connect(host = false, l)
     }
 
-    fun joinWifi(address: String) {
-        lobbyJob?.cancel()
-        lobby = Lobby.Connecting(address)
-        lobbyJob = viewModelScope.launch { connect(host = false) { WifiTransport.join(address) } }
-    }
-
-    private suspend fun connect(host: Boolean, open: suspend () -> Link) {
-        val l = try {
-            open()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            notice = "Couldn't connect: ${e.message ?: e.javaClass.simpleName}"
-            lobby = Lobby.Choose
-            return
-        }
+    private fun connect(host: Boolean, l: Link) {
         link = l
         connected = true
         isHost = host
@@ -350,18 +342,16 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         val out = outbox
         linkJob = viewModelScope.launch {
             launch {
-                for (m in out) l.send(m)
+                for (m in out) if (!l.send(m.encode())) break
             }
-            try {
-                l.messages().collect(::receive)
-                lost("${opponent ?: "The other player"} left")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                lost("Connection lost")
+            while (true) {
+                val line = l.receive() ?: break
+                val m = runCatching { NetMessage.decode(line) }.getOrNull() ?: continue
+                receive(m)
             }
+            lost("${opponent ?: "The other player"} left or got out of range")
         }
-        outbox.trySend(NetMessage.Hello(NetMessage.PROTOCOL, bluetooth.name))
+        outbox.trySend(NetMessage.Hello(NetMessage.PROTOCOL, myName))
         if (host) startOnline()
     }
 
@@ -411,7 +401,7 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         if (sayBye) {
             // Best effort: the socket is closed right after.
             viewModelScope.launch {
-                runCatching { l.send(NetMessage.Bye) }
+                l.send(NetMessage.Bye.encode())
                 l.close()
             }
         } else {
@@ -419,10 +409,13 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         }
         linkJob?.cancel()
         outbox.close()
+        linkHost?.close()
+        linkHost = null
     }
 
     override fun onCleared() {
-        lobbyJob?.cancel()
+        stopLobby()
         disconnect(sayBye = false)
+        linkHost?.close()
     }
 }

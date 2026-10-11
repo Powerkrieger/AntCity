@@ -29,4 +29,6 @@ include(":lab")
 // The Android app needs the Android SDK; skip it with -PnoApp (e.g. when building only the server).
 if (!providers.gradleProperty("noApp").isPresent) {
     include(":app")
+    // Shared local multiplayer (git submodule, see powerlink/README.md).
+    include(":powerlink")
 }
