@@ -99,7 +99,7 @@ class DuelTest {
         val hp = DuelRules().maxHp(s.players[1].board, s.players[1].board[o]!!)
         while (s.players[1].board.hasTownHall) s = Duel.shoot(s, 0, o).ok()
         // Shots are hidden: the shooter still only sees the scouted hall, marked as fired at.
-        assertEquals(Intel(true, DuelBuilding.TOWN_HALL, Shot.FIRED, 0), s.players[0].intel[o])
+        assertEquals(Intel(true, DuelBuilding.TOWN_HALL, Shot.FIRED, 0, fired = hp), s.players[0].intel[o])
         assertEquals(1, s.players[0].kills)
         assertEquals(hp, s.players[0].hits)
         assertEquals(setOf(o), s.players[1].board.ruins)
@@ -115,6 +115,24 @@ class DuelTest {
         s = Duel.endTurn(s, 1).ok()
         assertEquals(Stage.OVER, s.stage)
         assertEquals(Outcome.Win(0, byTownHall = true), s.outcome)
+    }
+
+    @Test
+    fun scoutingAddsToIntelInsteadOfOverwritingIt() {
+        var s = toFirstBattle()
+        s = s.copy(players = s.players.mapIndexed { i, p -> if (i == 0) p.copy(materials = DuelRules().extraActionCost * 3) else p })
+        s = Duel.buy(Duel.buy(Duel.buy(s, 0, Extra.SCOUT).ok(), 0, Extra.SCOUT).ok(), 0, Extra.SHOT).ok()
+        val built = o.neighbors()[1]
+        while (s.battle!!.budgets[0].shots > 0) s = Duel.shoot(s, 0, o).ok()
+        val hall = s.players[0].intel[o]!!
+        s = Duel.scout(s, 0, o).ok()
+        // Scouting the hall keeps the shots marked on it.
+        assertEquals(hall.fired, s.players[0].intel[o]?.fired)
+        s = Duel.scout(s, 0, built).ok()
+        // Scouting next to the hall doesn't forget what it is.
+        assertEquals(DuelBuilding.TOWN_HALL, s.players[0].intel[o]?.type)
+        assertEquals(hall.fired, s.players[0].intel[o]?.fired)
+        assertEquals(s.players[1].board[built]?.type, s.players[0].intel[built]?.type)
     }
 
     @Test

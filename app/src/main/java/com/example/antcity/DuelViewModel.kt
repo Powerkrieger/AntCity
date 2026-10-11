@@ -78,9 +78,11 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
     // Battle
     var action by mutableStateOf(Extra.SHOT)
     var showOwn by mutableStateOf(false)
-    /** The tile acted on last, highlighted on the board. */
-    var last by mutableStateOf<Hex?>(null)
+    /** The scout or shot just sent, for its animation; [Strike.id] tells repeats on one tile apart. */
+    var strike by mutableStateOf<Strike?>(null)
         private set
+
+    data class Strike(val hex: Hex, val kind: Extra, val id: Int)
 
     /** Short feedback (toast). */
     var message by mutableStateOf<String?>(null)
@@ -129,8 +131,10 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
         selected = null
         ghost = null
         invalid = null
-        last = null
+        strike = null
         showOwn = false
+        // Scouting first sets the stage for the shots.
+        action = if ((state?.battle?.budgets?.getOrNull(viewer)?.scouts ?: 0) > 0) Extra.SCOUT else Extra.SHOT
     }
 
     fun select(offer: Int) {
@@ -183,8 +187,10 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
             action == Extra.SHOT && budget.shots > 0 -> DuelMove.Shoot(hex)
             else -> return
         }
-        last = hex
+        strike = Strike(hex, action, (strike?.id ?: 0) + 1)
         act(move)
+        // Out of scouts: on to the shots.
+        if (action == Extra.SCOUT && (state?.battle?.budgets?.getOrNull(viewer)?.scouts ?: 0) == 0) action = Extra.SHOT
     }
 
     fun buy(extra: Extra) {
@@ -224,15 +230,18 @@ class DuelViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         state = s
-        if (before == null || before.stage != s.stage || before.phase != s.phase || before.round != s.round || before.battle?.turn != s.battle?.turn) {
-            clearSelection()
-        }
+        var handedOver = false
         if (mode == Mode.PASS) {
             val who = s.actor()
             if (who != null && who != viewer) {
                 viewer = who
                 covered = true
+                handedOver = true
             }
+        }
+        // A new player mustn't see the last one's pick and where they put it.
+        if (handedOver || before == null || before.stage != s.stage || before.phase != s.phase || before.round != s.round || before.battle?.turn != s.battle?.turn) {
+            clearSelection()
         }
     }
 

@@ -1,6 +1,11 @@
 package com.example.antcity.ui
 
 import android.widget.Toast
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -308,6 +313,8 @@ private data class Cell(
     /** 0..1, how good this tile is for the selected building; null if it isn't a choice. */
     val heat: Float? = null,
     val ghost: Boolean = false,
+    /** Shots fired at this tile this battle: a small mark with a tick per shot. */
+    val fired: Int = 0,
 )
 
 /**
@@ -324,6 +331,9 @@ private fun DuelBoard(
     ghost: Hex? = null,
     onGhostDrag: ((Hex?) -> Unit)? = null,
     onTap: ((Hex) -> Unit)? = null,
+    strike: DuelViewModel.Strike? = null,
+    /** 0..1 through [strike]'s animation. */
+    strikeProgress: Float = 1f,
 ) {
     val sprites = LocalSprites.current
     val tap by rememberUpdatedState(onTap)
@@ -374,7 +384,45 @@ private fun DuelBoard(
             }
             c.overlay?.let { key -> sprites[key]?.let { drawSprite(it, center, g.size * 1.3f) } }
             if (c.stale) drawPath(g.outline(h, 0.97f), Color.Black.copy(alpha = 0.3f))
+            // The shot being animated only gets its tick once it lands.
+            val landing = strike?.kind == Extra.SHOT && strike.hex == h && strikeProgress < LANDED
+            drawFiredMark(sprites[TileSprites.FIRED], center, g.size, if (landing) c.fired - 1 else c.fired)
             if (h == highlight || c.ghost) drawPath(g.outline(h, 0.97f), Color.White, style = Stroke(width = g.size * 0.08f))
+        }
+        if (strike != null && strikeProgress < 1f) drawStrike(sprites, strike, g.center(strike.hex), g.size, strikeProgress)
+    }
+}
+
+/** When a shot hits the tile in its animation, from 0 to 1. */
+private const val LANDED = 0.55f
+
+/** A small target mark in the tile's corner and, left of it, a tick for each shot fired there. */
+private fun DrawScope.drawFiredMark(sprite: ImageBitmap?, center: Offset, size: Float, count: Int) {
+    if (count <= 0) return
+    val at = center + Offset(size * 0.38f, -size * 0.42f)
+    drawCircle(Color.Black.copy(alpha = 0.5f), size * 0.2f, at)
+    sprite?.let { drawSprite(it, at, size * 0.4f) } ?: drawCircle(Color.White, size * 0.12f, at, style = Stroke(size * 0.05f))
+    val gap = size * 0.12f
+    for (i in 0 until count) {
+        val top = Offset(at.x - size * 0.3f - gap * i, at.y - size * 0.1f)
+        drawLine(Color.Black.copy(alpha = 0.6f), top, top + Offset(0f, size * 0.2f), size * 0.09f, StrokeCap.Round)
+        drawLine(Color.White, top, top + Offset(0f, size * 0.2f), size * 0.05f, StrokeCap.Round)
+    }
+}
+
+/** A scout sweeps over the tile and its neighbours; a shot drops onto the tile and bursts. */
+private fun DrawScope.drawStrike(sprites: Sprites, strike: DuelViewModel.Strike, center: Offset, size: Float, t: Float) {
+    when (strike.kind) {
+        Extra.SCOUT -> {
+            drawCircle(Color.White.copy(alpha = 0.5f * (1 - t)), size * (0.3f + 2f * t), center, style = Stroke(size * 0.12f))
+            sprites[SCOUTS]?.let { drawSprite(it, center, size * (0.9f + 0.4f * t), 1 - t) }
+        }
+        Extra.SHOT -> if (t < LANDED) {
+            val fall = t / LANDED
+            sprites[SHOTS]?.let { drawSprite(it, center - Offset(0f, size * 1.2f * (1 - fall)), size * (1.4f - 0.5f * fall)) }
+        } else {
+            val burst = (t - LANDED) / (1 - LANDED)
+            drawCircle(Color(0xFFFFB300).copy(alpha = 0.8f * (1 - burst)), size * (0.2f + 0.7f * burst), center)
         }
     }
 }
@@ -391,17 +439,18 @@ private fun townCells(s: DuelState, player: Int): Map<Hex, Cell> {
 
 private fun intelCell(i: Intel?, phase: Int): Cell {
     if (i == null) return Cell(fog = true)
-    val stale = i.phase < phase
-    return when {
+    val look = when {
         // Fired at, result not known (yet): keep what scouting showed.
-        i.shot == Shot.FIRED -> Cell(fog = !i.occupied, building = i.type, overlay = TileSprites.FIRED, stale = stale)
-        i.shot == Shot.MISS -> Cell(overlay = TileSprites.MISS, stale = stale)
-        i.shot == Shot.DESTROYED -> Cell(overlay = TileSprites.HIT, stale = stale)
-        i.shot == Shot.HIT -> Cell(building = i.type, overlay = TileSprites.CRACK, stale = stale)
-        i.type != null -> Cell(building = i.type, stale = stale)
-        i.occupied -> Cell(overlay = TileSprites.UNKNOWN, stale = stale)
-        else -> Cell(stale = stale)
+        i.shot == Shot.FIRED -> Cell(fog = !i.occupied, building = i.type, overlay = TileSprites.UNKNOWN.takeIf { i.occupied && i.type == null })
+        i.shot == Shot.MISS -> Cell(overlay = TileSprites.MISS)
+        i.shot == Shot.DESTROYED -> Cell(overlay = TileSprites.HIT)
+        i.shot == Shot.HIT -> Cell(building = i.type, overlay = TileSprites.CRACK)
+        i.type != null -> Cell(building = i.type)
+        i.occupied -> Cell(overlay = TileSprites.UNKNOWN)
+        else -> Cell()
     }
+    // Shots from earlier battles aren't marked any more.
+    return if (i.phase < phase) look.copy(stale = true) else look.copy(fired = i.fired)
 }
 
 // --- Building ---------------------------------------------------------------------------------
@@ -590,14 +639,22 @@ private fun BattleView(s: DuelState, vm: DuelViewModel) {
         return
     }
     val cells = if (vm.showOwn) townCells(s, vm.viewer) else Hex.disk(s.config.radius).associateWith { intelCell(me.intel[it], s.phase) }
+    val strikeAnim = remember { Animatable(1f) }
+    LaunchedEffect(vm.strike?.id) {
+        if (vm.strike == null) return@LaunchedEffect
+        strikeAnim.snapTo(0f)
+        strikeAnim.animateTo(1f, tween(550))
+    }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
             DuelBoard(
                 s.config.radius, cells,
-                highlight = vm.last.takeIf { !vm.showOwn },
+                highlight = null,
                 modifier = Modifier.border(3.dp, if (vm.showOwn) PLAYER_COLORS[vm.viewer] else PLAYER_COLORS[Duel.opponent(vm.viewer)], RoundedCornerShape(12.dp)),
                 onTap = vm::tapEnemy,
+                strike = vm.strike.takeIf { !vm.showOwn },
+                strikeProgress = strikeAnim.value,
             )
         }
         Panel {

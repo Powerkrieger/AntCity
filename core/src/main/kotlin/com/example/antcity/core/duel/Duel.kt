@@ -14,16 +14,16 @@ import com.example.antcity.core.hex.SplitMix
 enum class DuelBuilding(val offered: Boolean = true) {
     /** Lose it and you lose. Gives a shot and some materials. */
     TOWN_HALL(offered = false),
-    /** Workers: boost adjacent barracks and quarries. */
-    HOUSE,
+    /** Workers: boost adjacent barracks and quarries. Not offered until it's reworked: bots almost never took it. */
+    HOUSE(offered = false),
     /** A shot, two with a house next to it to recruit from. */
     BARRACKS,
     /** A shot, plus one per barracks next to it (crews). */
     ARTILLERY,
     /** One scout. */
     TOWER,
-    /** Materials, more with houses next to it. */
-    QUARRY,
+    /** Materials, more with houses next to it. Not offered until it's reworked, like [HOUSE]. */
+    QUARRY(offered = false),
     /** Sturdy, and makes its neighbours sturdier. */
     WALL;
 
@@ -148,9 +148,10 @@ enum class Shot {
 
 /**
  * What a player knows about one enemy tile, from the phase it was learned in. Scouting the tile
- * itself shows its building; its neighbours only show whether something is there.
+ * itself shows its building; its neighbours only show whether something is there. Within a phase
+ * new intel adds to the old instead of replacing it; [fired] counts the shots at the tile.
  */
-data class Intel(val occupied: Boolean, val type: DuelBuilding? = null, val shot: Shot? = null, val phase: Int)
+data class Intel(val occupied: Boolean, val type: DuelBuilding? = null, val shot: Shot? = null, val phase: Int, val fired: Int = 0)
 
 data class Player(
     val board: Board,
@@ -273,7 +274,16 @@ object Duel {
         val me = s.players[player]
         val seen = (listOf(hex) + hex.neighbors()).filter(enemy::inBounds).associateWith { h ->
             val b = enemy[h]
-            Intel(occupied = b != null, type = if (h == hex) b?.type else null, phase = s.phase)
+            // Seeing a neighbour again mustn't forget its building, nor the shots fired at it. A blind
+            // shot's tile is now seen, so it's no longer unknown.
+            val old = me.intel[h]?.takeIf { it.phase == s.phase }
+            Intel(
+                occupied = b != null,
+                type = if (h == hex) b?.type else old?.type.takeIf { b != null },
+                shot = old?.shot.takeIf { it != Shot.FIRED },
+                phase = s.phase,
+                fired = old?.fired ?: 0,
+            )
         }
         return DuelResult.Ok(
             s.withPlayer(player, me.copy(intel = me.intel + seen, scouted = me.scouted + seen.keys))
@@ -303,10 +313,11 @@ object Duel {
         // What the shooter learns, ever: nothing with hidden shots, nothing on unscouted tiles with blind shots.
         val revealed = if (!rules.hiddenShots && (!rules.blindShots || hex in me.scouted)) seen else null
         // A "fired here" marker keeps whatever was known about the tile.
-        val fired = (me.intel[hex]?.takeIf { it.phase == s.phase } ?: Intel(false, phase = s.phase)).copy(shot = Shot.FIRED)
+        val old = me.intel[hex]?.takeIf { it.phase == s.phase } ?: Intel(false, phase = s.phase)
+        val fired = old.copy(shot = Shot.FIRED, fired = old.fired + 1)
         val after = when {
             rules.salvo -> me.copy(intel = me.intel + (hex to fired), pending = revealed?.let { me.pending + (hex to it) } ?: me.pending)
-            else -> me.copy(intel = me.intel + (hex to (revealed ?: fired)))
+            else -> me.copy(intel = me.intel + (hex to (revealed?.copy(fired = fired.fired) ?: fired)))
         }
         return DuelResult.Ok(
             s.withPlayer(target, s.players[target].copy(board = board))
@@ -354,7 +365,8 @@ object Duel {
         attackerCheck(s, player)?.let { return DuelResult.Rejected(it) }
         val me = s.players[player]
         // The volley's results come in now.
-        val s = s.withPlayer(player, me.copy(intel = me.intel + me.pending, pending = emptyMap()))
+        val results = me.pending.mapValues { (h, i) -> i.copy(fired = me.intel[h]?.fired ?: 0) }
+        val s = s.withPlayer(player, me.copy(intel = me.intel + results, pending = emptyMap()))
         val battle = s.battle!!
         if (battle.turn + 1 < battle.order.size) return DuelResult.Ok(s.copy(battle = battle.copy(turn = battle.turn + 1)))
         return DuelResult.Ok(endBattle(s))
